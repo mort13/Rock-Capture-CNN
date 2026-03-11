@@ -1,0 +1,40 @@
+{
+  "name": "mass",
+  "anchor_template_path": "mass.jpg",
+  "anchor_match_threshold": 0.51,
+  "rois": [
+    {
+      "name": "mass",
+      "x_offset": 128,
+      "y_offset": 0,
+      "width": 46,
+      "height": 18,
+      "filters": {
+        "brightness": 15,
+        "contrast": 0,
+        "threshold": 115,
+        "threshold_enabled": false,
+        "grayscale": true,
+        "invert": false,
+        "channel": "none"
+      },
+      "seg_mode": "fixed_width",
+      "char_width": 0,
+      "char_count": 5,
+      "allowed_chars": "1234567890",
+      "format_pattern": "",
+      "dot_width": 0,
+      "enabled": true
+    }
+  ],
+  "search_region": {
+    "x": 1784,
+    "y": 609,
+    "w": 259,
+    "h": 156
+  },
+  "anchor_roi": {},
+  "monitor_index": 0,
+  "model_path": "mass_model.pth",
+  "char_classes": "0123456789.-%"
+}

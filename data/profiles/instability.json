@@ -1,0 +1,63 @@
+{
+  "name": "instability",
+  "anchor_template_path": "dot.jpg",
+  "anchor_match_threshold": 0.75,
+  "rois": [
+    {
+      "name": "inst1",
+      "x_offset": -29,
+      "y_offset": -11,
+      "width": 30,
+      "height": 16,
+      "filters": {
+        "brightness": 0,
+        "contrast": 0,
+        "threshold": 127,
+        "threshold_enabled": false,
+        "grayscale": true,
+        "invert": false,
+        "channel": "none"
+      },
+      "seg_mode": "fixed_width",
+      "char_width": 0,
+      "char_count": 3,
+      "allowed_chars": "1234567890",
+      "format_pattern": "",
+      "dot_width": 0,
+      "enabled": true
+    },
+    {
+      "name": "inst2",
+      "x_offset": 4,
+      "y_offset": -11,
+      "width": 19,
+      "height": 18,
+      "filters": {
+        "brightness": 0,
+        "contrast": 0,
+        "threshold": 127,
+        "threshold_enabled": false,
+        "grayscale": true,
+        "invert": false,
+        "channel": "none"
+      },
+      "seg_mode": "fixed_width",
+      "char_width": 0,
+      "char_count": 2,
+      "allowed_chars": "1234567890",
+      "format_pattern": "",
+      "dot_width": 0,
+      "enabled": true
+    }
+  ],
+  "search_region": {
+    "x": 1897,
+    "y": 720,
+    "w": 93,
+    "h": 27
+  },
+  "anchor_roi": {},
+  "monitor_index": 0,
+  "model_path": "mass_model_old.pth",
+  "char_classes": "0123456789.-%"
+}

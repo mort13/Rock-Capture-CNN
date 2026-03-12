@@ -179,3 +179,43 @@ class Profile:
         if not profiles_dir.exists():
             return []
         return [p.stem for p in sorted(profiles_dir.glob("*.json"))]
+
+
+@dataclass
+class HUDProfile:
+    """A named snapshot of all small profiles for a specific ship / HUD layout.
+
+    Storing one HUD profile bundles the anchor, search-region, and ROI settings
+    of every individual profile so that switching ships restores the complete setup.
+    """
+
+    name: str
+    profiles: dict = field(default_factory=dict)  # profile_name -> profile.to_dict()
+
+    def to_dict(self) -> dict:
+        return {"name": self.name, "profiles": self.profiles}
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "HUDProfile":
+        return cls(name=d["name"], profiles=d.get("profiles", {}))
+
+    def save(self, hud_profiles_dir: Path) -> None:
+        """Save HUD profile as JSON to hud_profiles_dir/{self.name}.json."""
+        hud_profiles_dir.mkdir(parents=True, exist_ok=True)
+        path = hud_profiles_dir / f"{self.name}.json"
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(self.to_dict(), f, indent=2)
+
+    @classmethod
+    def load(cls, path: Path) -> "HUDProfile":
+        """Load a HUD profile from a JSON file."""
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return cls.from_dict(data)
+
+    @staticmethod
+    def list_profiles(hud_profiles_dir: Path) -> list[str]:
+        """List available HUD profile names."""
+        if not hud_profiles_dir.exists():
+            return []
+        return [p.stem for p in sorted(hud_profiles_dir.glob("*.json"))]

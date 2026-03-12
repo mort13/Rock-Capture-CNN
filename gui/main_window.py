@@ -4,6 +4,7 @@ Top-level QMainWindow with toolbar, preview, and controls panel.
 """
 
 import csv
+import json
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -15,7 +16,7 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt, QTimer
 
-from core.profile import Profile
+from core.profile import Profile, HUDProfile
 from core.pipeline import RecognitionPipeline, FrameResult
 from cnn.predictor import Predictor
 from cnn.trainer import TrainerThread
@@ -35,6 +36,7 @@ class MainWindow(QMainWindow):
         self.setGeometry(100, 100, 1400, 900)
 
         self._base_dir = Path(__file__).resolve().parent.parent
+        self._hud_profiles_dir = self._base_dir / "data" / "hud_profiles"
         self._predictor = Predictor()
         self._pipelines: dict[str, RecognitionPipeline] = {}
         self._profiles: dict[str, Profile] = {}
@@ -47,6 +49,7 @@ class MainWindow(QMainWindow):
         self._model_path: str = ""
 
         self._init_toolbar()
+        self._init_hud_toolbar()
         self._init_central()
         self._init_statusbar()
         self._connect_signals()
@@ -118,6 +121,154 @@ class MainWindow(QMainWindow):
         self.train_model_btn = QPushButton("Train")
         self.train_model_btn.clicked.connect(self._on_train)
         toolbar.addWidget(self.train_model_btn)
+
+    # ── HUD Profile Toolbar ──────────────────────────────────────
+
+    def _init_hud_toolbar(self) -> None:
+        hud_toolbar = QToolBar("HUD Profiles")
+        hud_toolbar.setMovable(False)
+        self.addToolBar(Qt.ToolBarArea.TopToolBarArea, hud_toolbar)
+
+        hud_toolbar.addWidget(QLabel(" HUD Profile: "))
+        self.hud_profile_combo = QComboBox()
+        self.hud_profile_combo.setMinimumWidth(140)
+        hud_toolbar.addWidget(self.hud_profile_combo)
+
+        self.save_hud_btn = QPushButton("Save HUD")
+        self.save_hud_btn.setToolTip("Save current state of all profiles as a HUD profile")
+        self.save_hud_btn.clicked.connect(self._on_save_hud_profile)
+        hud_toolbar.addWidget(self.save_hud_btn)
+
+        self.load_hud_btn = QPushButton("Load HUD")
+        self.load_hud_btn.setToolTip("Overwrite all small profiles with the selected HUD profile")
+        self.load_hud_btn.clicked.connect(self._on_load_hud_profile)
+        hud_toolbar.addWidget(self.load_hud_btn)
+
+        self.delete_hud_btn = QPushButton("Delete HUD")
+        self.delete_hud_btn.setToolTip("Delete the selected HUD profile file")
+        self.delete_hud_btn.clicked.connect(self._on_delete_hud_profile)
+        hud_toolbar.addWidget(self.delete_hud_btn)
+
+    def _refresh_hud_profile_combo(self) -> None:
+        names = HUDProfile.list_profiles(self._hud_profiles_dir)
+        self.hud_profile_combo.blockSignals(True)
+        current = self.hud_profile_combo.currentText()
+        self.hud_profile_combo.clear()
+        self.hud_profile_combo.addItem("(none)")
+        for name in names:
+            self.hud_profile_combo.addItem(name)
+        # Restore previous selection if still present
+        idx = self.hud_profile_combo.findText(current)
+        self.hud_profile_combo.setCurrentIndex(max(0, idx))
+        self.hud_profile_combo.blockSignals(False)
+
+    def _on_save_hud_profile(self) -> None:
+        from PyQt6.QtWidgets import QInputDialog
+        # Sync current editing profile before snapshotting
+        self._sync_profile_from_ui()
+
+        # Suggest the currently selected HUD name as default
+        default_name = self.hud_profile_combo.currentText()
+        if default_name == "(none)":
+            default_name = ""
+
+        name, ok = QInputDialog.getText(
+            self, "Save HUD Profile",
+            "HUD profile name (will overwrite if it already exists):",
+            text=default_name,
+        )
+        if not ok or not name.strip():
+            return
+        name = name.strip()
+
+        # Snapshot every profile that is currently loaded
+        hud = HUDProfile(name=name)
+        for pname, profile in self._profiles.items():
+            hud.profiles[pname] = profile.to_dict()
+
+        hud.save(self._hud_profiles_dir)
+        self._refresh_hud_profile_combo()
+        self.hud_profile_combo.setCurrentText(name)
+        self.statusBar().showMessage(
+            f"HUD profile '{name}' saved ({len(hud.profiles)} profiles)"
+        )
+
+    def _on_load_hud_profile(self) -> None:
+        name = self.hud_profile_combo.currentText()
+        if name == "(none)" or not name:
+            QMessageBox.warning(self, "No HUD Profile", "Select a HUD profile first.")
+            return
+
+        path = self._hud_profiles_dir / f"{name}.json"
+        if not path.exists():
+            QMessageBox.warning(self, "Not Found", f"HUD profile file not found:\n{path}")
+            return
+
+        reply = QMessageBox.question(
+            self, "Load HUD Profile",
+            f"Load HUD profile '{name}'?\n\n"
+            f"This will overwrite all matching small profile files on disk and reload them.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+
+        hud = HUDProfile.load(path)
+        was_running = self._running
+        if was_running:
+            for p in self._pipelines.values():
+                p.stop()
+            self._running = False
+            self.start_stop_btn.setText("Start All (F11)")
+            self.start_stop_btn.setStyleSheet("")
+            self.set_region_btn.setEnabled(True)
+
+        profiles_dir = self._base_dir / "data" / "profiles"
+        profiles_dir.mkdir(parents=True, exist_ok=True)
+
+        for pname, pdata in hud.profiles.items():
+            # Write each small profile back to disk
+            out_path = profiles_dir / f"{pname}.json"
+            with open(out_path, "w", encoding="utf-8") as f:
+                json.dump(pdata, f, indent=2)
+
+        # Reload everything from disk
+        self._load_all_profiles()
+
+        # Restore selection in HUD combo (load_all_profiles resets it)
+        self.hud_profile_combo.setCurrentText(name)
+
+        self.statusBar().showMessage(
+            f"Loaded HUD profile '{name}' — {len(hud.profiles)} profiles applied"
+        )
+
+        if was_running:
+            started = self._start_all_pipelines()
+            if started:
+                self._running = True
+                self.start_stop_btn.setText("Stop All (F11)")
+                self.start_stop_btn.setStyleSheet("background-color: #ff6666;")
+                self.set_region_btn.setEnabled(False)
+
+    def _on_delete_hud_profile(self) -> None:
+        name = self.hud_profile_combo.currentText()
+        if name == "(none)" or not name:
+            QMessageBox.warning(self, "No HUD Profile", "Select a HUD profile to delete.")
+            return
+
+        reply = QMessageBox.question(
+            self, "Delete HUD Profile",
+            f"Delete HUD profile '{name}'?\nThis only removes the HUD file; small profiles are not affected.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+
+        path = self._hud_profiles_dir / f"{name}.json"
+        if path.exists():
+            path.unlink()
+        self._refresh_hud_profile_combo()
+        self.statusBar().showMessage(f"HUD profile '{name}' deleted")
 
     # ── Central Layout ───────────────────────────────────────────
 
@@ -245,6 +396,7 @@ class MainWindow(QMainWindow):
                     break
 
         self._refresh_profile_combo(names)
+        self._refresh_hud_profile_combo()
 
     def _create_pipeline_for(self, name: str, profile: Profile) -> None:
         """Create and wire a RecognitionPipeline for a single profile."""

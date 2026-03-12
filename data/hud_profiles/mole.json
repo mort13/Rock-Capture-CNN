@@ -1,0 +1,433 @@
+{
+  "name": "mole",
+  "profiles": {
+    "instability": {
+      "name": "instability",
+      "anchor_template_path": "dot.jpg",
+      "anchor_match_threshold": 0.75,
+      "rois": [
+        {
+          "name": "inst1",
+          "x_offset": -29,
+          "y_offset": -11,
+          "width": 30,
+          "height": 18,
+          "filters": {
+            "brightness": 0,
+            "contrast": 0,
+            "threshold": 127,
+            "threshold_enabled": false,
+            "grayscale": true,
+            "invert": false,
+            "channel": "none"
+          },
+          "seg_mode": "fixed_width",
+          "char_width": 0,
+          "char_count": 3,
+          "allowed_chars": "1234567890",
+          "format_pattern": "",
+          "dot_width": 0,
+          "enabled": true,
+          "recognition_mode": "cnn",
+          "template_dir": "",
+          "csv_index": 3
+        },
+        {
+          "name": "inst2",
+          "x_offset": 4,
+          "y_offset": -11,
+          "width": 19,
+          "height": 18,
+          "filters": {
+            "brightness": 0,
+            "contrast": 0,
+            "threshold": 127,
+            "threshold_enabled": false,
+            "grayscale": true,
+            "invert": false,
+            "channel": "none"
+          },
+          "seg_mode": "fixed_width",
+          "char_width": 0,
+          "char_count": 2,
+          "allowed_chars": "1234567890",
+          "format_pattern": "",
+          "dot_width": 0,
+          "enabled": true,
+          "recognition_mode": "cnn",
+          "template_dir": "",
+          "csv_index": 4
+        }
+      ],
+      "search_region": {
+        "x": 1879,
+        "y": 718,
+        "w": 115,
+        "h": 26
+      },
+      "anchor_roi": {},
+      "monitor_index": 0
+    },
+    "mass": {
+      "name": "mass",
+      "anchor_template_path": "mass.jpg",
+      "anchor_match_threshold": 0.51,
+      "rois": [
+        {
+          "name": "mass",
+          "x_offset": 128,
+          "y_offset": 0,
+          "width": 46,
+          "height": 18,
+          "filters": {
+            "brightness": 15,
+            "contrast": 0,
+            "threshold": 115,
+            "threshold_enabled": false,
+            "grayscale": true,
+            "invert": false,
+            "channel": "none"
+          },
+          "seg_mode": "fixed_width",
+          "char_width": 0,
+          "char_count": 5,
+          "allowed_chars": "1234567890",
+          "format_pattern": "",
+          "dot_width": 0,
+          "enabled": true,
+          "recognition_mode": "cnn",
+          "template_dir": "",
+          "csv_index": 1
+        }
+      ],
+      "search_region": {
+        "x": 1785,
+        "y": 664,
+        "w": 218,
+        "h": 33
+      },
+      "anchor_roi": {},
+      "monitor_index": 0
+    },
+    "material1": {
+      "name": "material1",
+      "anchor_template_path": "percentage2.jpg",
+      "anchor_match_threshold": 0.52,
+      "rois": [
+        {
+          "name": "mat1_1",
+          "x_offset": -42,
+          "y_offset": 0,
+          "width": 20,
+          "height": 17,
+          "filters": {
+            "brightness": 0,
+            "contrast": 100,
+            "threshold": 81,
+            "threshold_enabled": false,
+            "grayscale": true,
+            "invert": false,
+            "channel": "none"
+          },
+          "seg_mode": "fixed_width",
+          "char_width": 0,
+          "char_count": 2,
+          "allowed_chars": "1234567890",
+          "format_pattern": "",
+          "dot_width": 0,
+          "enabled": true,
+          "recognition_mode": "cnn",
+          "template_dir": "",
+          "csv_index": 5
+        },
+        {
+          "name": "mat1_2",
+          "x_offset": -18,
+          "y_offset": 0,
+          "width": 18,
+          "height": 17,
+          "filters": {
+            "brightness": 0,
+            "contrast": 100,
+            "threshold": 127,
+            "threshold_enabled": false,
+            "grayscale": true,
+            "invert": false,
+            "channel": "none"
+          },
+          "seg_mode": "fixed_width",
+          "char_width": 0,
+          "char_count": 2,
+          "allowed_chars": "1234567890",
+          "format_pattern": "",
+          "dot_width": 0,
+          "enabled": true,
+          "recognition_mode": "cnn",
+          "template_dir": "",
+          "csv_index": 6
+        },
+        {
+          "name": "mat1",
+          "x_offset": 30,
+          "y_offset": 0,
+          "width": 160,
+          "height": 17,
+          "filters": {
+            "brightness": -9,
+            "contrast": 0,
+            "threshold": 86,
+            "threshold_enabled": false,
+            "grayscale": true,
+            "invert": false,
+            "channel": "none"
+          },
+          "seg_mode": "projection",
+          "char_width": 0,
+          "char_count": 0,
+          "allowed_chars": "",
+          "format_pattern": "",
+          "dot_width": 0,
+          "enabled": true,
+          "recognition_mode": "template",
+          "template_dir": "templates\\resources",
+          "csv_index": 7
+        }
+      ],
+      "search_region": {
+        "x": 1785,
+        "y": 838,
+        "w": 246,
+        "h": 24
+      },
+      "anchor_roi": {},
+      "monitor_index": 0
+    },
+    "material2": {
+      "name": "material2",
+      "anchor_template_path": "percentage2.jpg",
+      "anchor_match_threshold": 0.52,
+      "rois": [
+        {
+          "name": "mat2_1",
+          "x_offset": -40,
+          "y_offset": 0,
+          "width": 18,
+          "height": 17,
+          "filters": {
+            "brightness": 0,
+            "contrast": 100,
+            "threshold": 81,
+            "threshold_enabled": false,
+            "grayscale": true,
+            "invert": false,
+            "channel": "none"
+          },
+          "seg_mode": "fixed_width",
+          "char_width": 0,
+          "char_count": 2,
+          "allowed_chars": "1234567890",
+          "format_pattern": "",
+          "dot_width": 0,
+          "enabled": true,
+          "recognition_mode": "cnn",
+          "template_dir": "",
+          "csv_index": 8
+        },
+        {
+          "name": "mat2_2",
+          "x_offset": -18,
+          "y_offset": 0,
+          "width": 18,
+          "height": 17,
+          "filters": {
+            "brightness": 0,
+            "contrast": 100,
+            "threshold": 127,
+            "threshold_enabled": false,
+            "grayscale": true,
+            "invert": false,
+            "channel": "none"
+          },
+          "seg_mode": "fixed_width",
+          "char_width": 0,
+          "char_count": 2,
+          "allowed_chars": "1234567890",
+          "format_pattern": "",
+          "dot_width": 0,
+          "enabled": true,
+          "recognition_mode": "cnn",
+          "template_dir": "",
+          "csv_index": 9
+        },
+        {
+          "name": "mat2",
+          "x_offset": 30,
+          "y_offset": 0,
+          "width": 160,
+          "height": 17,
+          "filters": {
+            "brightness": -9,
+            "contrast": 0,
+            "threshold": 86,
+            "threshold_enabled": false,
+            "grayscale": true,
+            "invert": false,
+            "channel": "none"
+          },
+          "seg_mode": "projection",
+          "char_width": 0,
+          "char_count": 0,
+          "allowed_chars": "",
+          "format_pattern": "",
+          "dot_width": 0,
+          "enabled": true,
+          "recognition_mode": "template",
+          "template_dir": "templates\\resources",
+          "csv_index": 10
+        }
+      ],
+      "search_region": {
+        "x": 1789,
+        "y": 861,
+        "w": 231,
+        "h": 21
+      },
+      "anchor_roi": {},
+      "monitor_index": 0
+    },
+    "material3": {
+      "name": "material3",
+      "anchor_template_path": "percentage2.jpg",
+      "anchor_match_threshold": 0.52,
+      "rois": [
+        {
+          "name": "mat3_1",
+          "x_offset": -40,
+          "y_offset": 0,
+          "width": 18,
+          "height": 17,
+          "filters": {
+            "brightness": 0,
+            "contrast": 100,
+            "threshold": 81,
+            "threshold_enabled": false,
+            "grayscale": true,
+            "invert": false,
+            "channel": "none"
+          },
+          "seg_mode": "fixed_width",
+          "char_width": 0,
+          "char_count": 2,
+          "allowed_chars": "1234567890",
+          "format_pattern": "",
+          "dot_width": 0,
+          "enabled": true,
+          "recognition_mode": "cnn",
+          "template_dir": "",
+          "csv_index": 11
+        },
+        {
+          "name": "mat3_2",
+          "x_offset": -18,
+          "y_offset": 0,
+          "width": 18,
+          "height": 17,
+          "filters": {
+            "brightness": 0,
+            "contrast": 100,
+            "threshold": 127,
+            "threshold_enabled": false,
+            "grayscale": true,
+            "invert": false,
+            "channel": "none"
+          },
+          "seg_mode": "fixed_width",
+          "char_width": 0,
+          "char_count": 2,
+          "allowed_chars": "1234567890",
+          "format_pattern": "",
+          "dot_width": 0,
+          "enabled": true,
+          "recognition_mode": "cnn",
+          "template_dir": "",
+          "csv_index": 12
+        },
+        {
+          "name": "mat3",
+          "x_offset": 30,
+          "y_offset": 0,
+          "width": 130,
+          "height": 17,
+          "filters": {
+            "brightness": -9,
+            "contrast": 0,
+            "threshold": 86,
+            "threshold_enabled": false,
+            "grayscale": true,
+            "invert": false,
+            "channel": "none"
+          },
+          "seg_mode": "projection",
+          "char_width": 0,
+          "char_count": 0,
+          "allowed_chars": "",
+          "format_pattern": "",
+          "dot_width": 0,
+          "enabled": true,
+          "recognition_mode": "template",
+          "template_dir": "templates\\resources",
+          "csv_index": 13
+        }
+      ],
+      "search_region": {
+        "x": 1793,
+        "y": 881,
+        "w": 209,
+        "h": 23
+      },
+      "anchor_roi": {},
+      "monitor_index": 0
+    },
+    "resistance": {
+      "name": "resistance",
+      "anchor_template_path": "percentage.jpg",
+      "anchor_match_threshold": 0.7,
+      "rois": [
+        {
+          "name": "resistance",
+          "x_offset": -19,
+          "y_offset": -2,
+          "width": 19,
+          "height": 18,
+          "filters": {
+            "brightness": 0,
+            "contrast": 0,
+            "threshold": 127,
+            "threshold_enabled": false,
+            "grayscale": true,
+            "invert": false,
+            "channel": "none"
+          },
+          "seg_mode": "fixed_width",
+          "char_width": 0,
+          "char_count": 2,
+          "allowed_chars": "1234567890",
+          "format_pattern": "",
+          "dot_width": 0,
+          "enabled": true,
+          "recognition_mode": "cnn",
+          "template_dir": "",
+          "csv_index": 2
+        }
+      ],
+      "search_region": {
+        "x": 1893,
+        "y": 695,
+        "w": 94,
+        "h": 25
+      },
+      "anchor_roi": {},
+      "monitor_index": 0
+    }
+  }
+}

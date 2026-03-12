@@ -22,6 +22,14 @@ _MODE_LABELS = [label for label, _ in _SEG_MODES]
 _MODE_VALUES = [value for _, value in _SEG_MODES]
 
 
+_RECOG_MODES = [
+    ("CNN (digits/chars)", "cnn"),
+    ("Template matching (words)", "template"),
+]
+_RECOG_LABELS = [label for label, _ in _RECOG_MODES]
+_RECOG_VALUES = [value for _, value in _RECOG_MODES]
+
+
 class ROIEditDialog(QDialog):
     """Dialog for adding or editing a single ROI definition."""
 
@@ -50,10 +58,42 @@ class ROIEditDialog(QDialog):
             self.h_spin.setValue(roi.height)
 
         layout.addRow("Name:", self.name_edit)
+
+        self.csv_index_spin = QSpinBox()
+        self.csv_index_spin.setRange(0, 999)
+        self.csv_index_spin.setValue(roi.csv_index if roi else 0)
+        self.csv_index_spin.setSpecialValueText("0 (unordered)")
+        self.csv_index_spin.setToolTip(
+            "Column order in the exported CSV.\n"
+            "Columns are sorted ascending by this value.\n"
+            "0 = placed after all explicitly-ordered columns."
+        )
+        layout.addRow("CSV column index:", self.csv_index_spin)
+
         layout.addRow("X Offset:", self.x_spin)
         layout.addRow("Y Offset:", self.y_spin)
         layout.addRow("Width:", self.w_spin)
         layout.addRow("Height:", self.h_spin)
+
+        # Recognition mode
+        self.recog_combo = QComboBox()
+        self.recog_combo.addItems(_RECOG_LABELS)
+        if roi and roi.recognition_mode in _RECOG_VALUES:
+            self.recog_combo.setCurrentIndex(_RECOG_VALUES.index(roi.recognition_mode))
+        self.recog_combo.currentIndexChanged.connect(self._on_recog_mode_changed)
+        layout.addRow("Recognition:", self.recog_combo)
+
+        # Template directory (only for template mode)
+        self.template_dir_label = QLabel("Template dir:")
+        self.template_dir_edit = QLineEdit(roi.template_dir if roi else "")
+        self.template_dir_edit.setPlaceholderText("relative to data/  e.g. templates/resources")
+        self.template_dir_edit.setToolTip(
+            "Folder containing template images for word matching.\n"
+            "Path is relative to the project's data/ directory.\n"
+            "Each .png/.jpg file in that folder is one possible word;\n"
+            "the filename (without extension) is the label returned."
+        )
+        layout.addRow(self.template_dir_label, self.template_dir_edit)
 
         # Segmentation mode
         self.seg_combo = QComboBox()
@@ -142,7 +182,32 @@ class ROIEditDialog(QDialog):
         buttons.rejected.connect(self.reject)
         layout.addRow(buttons)
 
-        self._on_seg_mode_changed(self.seg_combo.currentIndex())
+        self._on_recog_mode_changed(self.recog_combo.currentIndex())
+
+    def _on_recog_mode_changed(self, index: int) -> None:
+        is_template = _RECOG_VALUES[index] == "template"
+        # Show template dir only in template mode
+        self.template_dir_label.setVisible(is_template)
+        self.template_dir_edit.setVisible(is_template)
+        # Hide CNN-specific widgets in template mode
+        cnn_widgets = [
+            self.seg_combo,
+            self.char_count_label, self.char_count_spin,
+            self.char_w_label, self.char_w_spin,
+            self.allowed_chars_edit,
+            self.format_pattern_edit,
+            self.dot_width_spin,
+        ]
+        for w in cnn_widgets:
+            w.setVisible(not is_template)
+        # Also hide the form labels for hidden widgets
+        form = self.layout()
+        for w in cnn_widgets:
+            label = form.labelForField(w)
+            if label:
+                label.setVisible(not is_template)
+        if not is_template:
+            self._on_seg_mode_changed(self.seg_combo.currentIndex())
 
     def _on_seg_mode_changed(self, index: int) -> None:
         is_fixed = _MODE_VALUES[index] == "fixed_width"
@@ -163,6 +228,9 @@ class ROIEditDialog(QDialog):
             allowed_chars=self.allowed_chars_edit.text(),
             format_pattern=self.format_pattern_edit.text(),
             dot_width=self.dot_width_spin.value(),
+            recognition_mode=_RECOG_VALUES[self.recog_combo.currentIndex()],
+            template_dir=self.template_dir_edit.text(),
+            csv_index=self.csv_index_spin.value(),
         )
 
 
@@ -219,8 +287,9 @@ class ROIEditor(QGroupBox):
         self.roi_list.clear()
         for roi in self._rois:
             pattern_hint = f"  {roi.format_pattern}" if roi.format_pattern else ""
+            idx_hint = f"#{roi.csv_index}  " if roi.csv_index > 0 else "#-  "
             item = QListWidgetItem(
-                f"{roi.name}  ({roi.x_offset}, {roi.y_offset}) "
+                f"{idx_hint}{roi.name}  ({roi.x_offset}, {roi.y_offset}) "
                 f"{roi.width}x{roi.height}  [{roi.seg_mode}]{pattern_hint}"
             )
             item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)

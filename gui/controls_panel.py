@@ -37,8 +37,6 @@ class ControlsPanel(QWidget):
     filters_changed = pyqtSignal(object)
     roi_selected_signal = pyqtSignal(int)
     rois_changed = pyqtSignal()
-    train_requested = pyqtSignal()
-    load_model_requested = pyqtSignal()
     labeler_toggled = pyqtSignal(bool)
 
     def __init__(self, parent=None):
@@ -64,10 +62,7 @@ class ControlsPanel(QWidget):
         self.filter_widget.filters_changed.connect(self._on_filters_changed)
         layout.addWidget(self.filter_widget)
 
-        # 4. CNN model
-        layout.addWidget(self._create_model_group())
-
-        # 5. Results display
+        # 4. Results display
         layout.addWidget(self._create_results_group())
 
         # 6. Labeler
@@ -132,25 +127,6 @@ class ControlsPanel(QWidget):
         self.anchor_roi_label = QLabel("Anchor ROI: full frame")
         self.anchor_roi_label.setStyleSheet("color: gray; font-size: 10px;")
         layout.addWidget(self.anchor_roi_label)
-
-        return group
-
-    def _create_model_group(self) -> QGroupBox:
-        group = QGroupBox("CNN Model")
-        layout = QVBoxLayout(group)
-
-        self.model_status = QLabel("No model loaded")
-        self.model_status.setStyleSheet("color: gray; font-size: 10px;")
-        self.model_status.setWordWrap(True)
-        layout.addWidget(self.model_status)
-
-        self.train_btn = QPushButton("Train on Labeled Data")
-        self.train_btn.clicked.connect(self.train_requested.emit)
-        layout.addWidget(self.train_btn)
-
-        self.load_model_btn = QPushButton("Load Model...")
-        self.load_model_btn.clicked.connect(self.load_model_requested.emit)
-        layout.addWidget(self.load_model_btn)
 
         return group
 

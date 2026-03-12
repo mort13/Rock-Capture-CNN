@@ -24,7 +24,10 @@
       "allowed_chars": "1234567890",
       "format_pattern": "",
       "dot_width": 0,
-      "enabled": true
+      "enabled": true,
+      "recognition_mode": "cnn",
+      "template_dir": "",
+      "csv_index": 1
     }
   ],
   "search_region": {
@@ -34,7 +37,5 @@
     "h": 156
   },
   "anchor_roi": {},
-  "monitor_index": 0,
-  "model_path": "mass_model.pth",
-  "char_classes": "0123456789.-%"
+  "monitor_index": 0
 }

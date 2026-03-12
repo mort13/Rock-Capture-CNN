@@ -14,6 +14,7 @@ from core.anchor import AnchorMatcher, AnchorResult
 from core.filters import ImageFilterPipeline
 from core.segmenter import CharacterSegmenter, SegmentedChar
 from core.profile import Profile, ROIDefinition
+from core.template_matcher import WordTemplateMatcher
 from cnn.predictor import Predictor
 
 
@@ -65,6 +66,7 @@ class RecognitionPipeline(QObject):
         self._profile_name: str = profile_name
         self._labeler_mode: bool = False
         self._base_dir: Path = Path(".")
+        self._template_matchers: dict[str, WordTemplateMatcher] = {}
 
         self.capture_engine.frame_captured.connect(self._on_frame)
 
@@ -80,19 +82,12 @@ class RecognitionPipeline(QObject):
         """Load a profile: set anchor template, ROI definitions, model."""
         self._profile = profile
         self._base_dir = base_dir
+        self._template_matchers.clear()  # Invalidate cached matchers on profile reload
 
         anchor_path = base_dir / "data" / "anchors" / profile.anchor_template_path
         if profile.anchor_template_path and anchor_path.exists():
             self.anchor_matcher.load_template(str(anchor_path))
         self.anchor_matcher.threshold = profile.anchor_match_threshold
-
-        if self._owns_predictor:
-            model_path = base_dir / "data" / "models" / profile.model_path
-            if profile.model_path and model_path.exists():
-                self.predictor.load_model(
-                    str(model_path),
-                    char_classes=profile.char_classes,
-                )
 
         sr = profile.search_region
         self.capture_engine.set_search_region(
@@ -142,6 +137,33 @@ class RecognitionPipeline(QObject):
 
             filtered_roi = self.filter_pipeline.apply(raw_roi, roi_def.filters)
 
+            # ── Template matching mode ─────────────────────────────
+            if roi_def.recognition_mode == "template":
+                matcher = self._get_template_matcher(roi_def.template_dir)
+                if matcher and matcher.is_loaded:
+                    # Match against the raw (unfiltered) ROI — templates are raw screenshots too
+                    result = matcher.match(raw_roi)
+                    text = result.label
+                else:
+                    if not hasattr(self, '_tmpl_warn_logged'):
+                        self._tmpl_warn_logged = set()
+                    key = roi_def.name
+                    if key not in self._tmpl_warn_logged:
+                        print(f"[Pipeline] Template matcher not loaded for roi='{roi_def.name}' template_dir='{roi_def.template_dir}'")
+                        self._tmpl_warn_logged.add(key)
+                    text = "?"
+                roi_results.append(
+                    ROIResult(
+                        name=roi_def.name,
+                        raw_image=raw_roi,
+                        filtered_image=filtered_roi,
+                        characters=[],
+                        recognized_text=text,
+                    )
+                )
+                continue
+
+            # ── CNN recognition mode ───────────────────────────────
             pattern = roi_def.format_pattern
 
             if pattern and "{" in pattern:
@@ -214,6 +236,17 @@ class RecognitionPipeline(QObject):
             profile_name=self._profile_name,
         )
         self.frame_processed.emit(result)
+
+    def _get_template_matcher(self, template_dir: str) -> WordTemplateMatcher | None:
+        """Return a cached WordTemplateMatcher for the given directory."""
+        if not template_dir:
+            return None
+        if template_dir not in self._template_matchers:
+            matcher = WordTemplateMatcher()
+            full_path = self._base_dir / "data" / template_dir
+            matcher.load_templates(full_path)
+            self._template_matchers[template_dir] = matcher
+        return self._template_matchers[template_dir]
 
     @staticmethod
     def _apply_format_pattern(pattern: str, predicted: str) -> str:

@@ -3,7 +3,9 @@ Main window for Rock Capture CNN.
 Top-level QMainWindow with toolbar, preview, and controls panel.
 """
 
+import csv
 import sys
+from datetime import datetime
 from pathlib import Path
 from pynput import keyboard
 
@@ -39,6 +41,10 @@ class MainWindow(QMainWindow):
         self._editing_profile_name: str | None = None
         self._running = False
         self._fps = 10
+        self._last_frame_results: dict[str, FrameResult] = {}
+        self._staged_data: dict | None = None
+        self._csv_path = self._base_dir / "data" / "captures.csv"
+        self._model_path: str = ""
 
         self._init_toolbar()
         self._init_central()
@@ -64,6 +70,10 @@ class MainWindow(QMainWindow):
         self.new_profile_btn = QPushButton("New")
         self.new_profile_btn.clicked.connect(self._on_new_profile)
         toolbar.addWidget(self.new_profile_btn)
+
+        self.duplicate_profile_btn = QPushButton("Duplicate")
+        self.duplicate_profile_btn.clicked.connect(self._on_duplicate_profile)
+        toolbar.addWidget(self.duplicate_profile_btn)
 
         self.save_profile_btn = QPushButton("Save")
         self.save_profile_btn.clicked.connect(self._on_save_profile)
@@ -92,6 +102,22 @@ class MainWindow(QMainWindow):
         self.start_stop_btn = QPushButton("Start All (F11)")
         self.start_stop_btn.clicked.connect(self._on_start_stop)
         toolbar.addWidget(self.start_stop_btn)
+
+        toolbar.addSeparator()
+
+        toolbar.addWidget(QLabel(" Model: "))
+        self.model_status_label = QLabel("No model loaded")
+        self.model_status_label.setStyleSheet("color: gray;")
+        self.model_status_label.setMinimumWidth(160)
+        toolbar.addWidget(self.model_status_label)
+
+        self.load_model_btn = QPushButton("Load Model...")
+        self.load_model_btn.clicked.connect(self._on_load_model)
+        toolbar.addWidget(self.load_model_btn)
+
+        self.train_model_btn = QPushButton("Train")
+        self.train_model_btn.clicked.connect(self._on_train)
+        toolbar.addWidget(self.train_model_btn)
 
     # ── Central Layout ───────────────────────────────────────────
 
@@ -150,14 +176,13 @@ class MainWindow(QMainWindow):
         self.controls_panel.anchor_threshold_changed.connect(self._on_anchor_threshold)
         self.controls_panel.filters_changed.connect(self._on_filters_changed)
         self.controls_panel.rois_changed.connect(self._on_rois_changed)
-        self.controls_panel.train_requested.connect(self._on_train)
-        self.controls_panel.load_model_requested.connect(self._on_load_model)
         self.controls_panel.labeler_toggled.connect(self._on_labeler_toggle)
 
     # ── Frame Processing ─────────────────────────────────────────
 
     def _on_frame_result(self, result: FrameResult) -> None:
         self._frame_count += 1
+        self._last_frame_results[result.profile_name] = result
 
         # Show the edited profile's frame in the main preview
         if result.profile_name == self._editing_profile_name:
@@ -187,6 +212,7 @@ class MainWindow(QMainWindow):
                 )
 
     def _on_anchor_lost(self, profile_name: str) -> None:
+        self._last_frame_results.pop(profile_name, None)
         if profile_name == self._editing_profile_name:
             self.anchor_status_label.setText(f"Anchor [{profile_name}]: NOT FOUND")
             self.controls_panel.update_anchor_status("Not found", found=False)
@@ -209,17 +235,14 @@ class MainWindow(QMainWindow):
             self._profiles[name] = profile
             self._create_pipeline_for(name, profile)
 
-        # Auto-load the CNN model from the first profile that specifies one
+        # Auto-load the first available model from data/models/
         if not self._predictor.is_loaded:
-            for profile in self._profiles.values():
-                if profile.model_path:
-                    model_path = self._base_dir / "data" / "models" / profile.model_path
-                    if model_path.exists():
-                        self._predictor.load_model(
-                            str(model_path),
-                            char_classes=profile.char_classes,
-                        )
-                        break
+            models_dir = self._base_dir / "data" / "models"
+            for pth in sorted(models_dir.glob("*.pth")):
+                if self._predictor.load_model(str(pth)):
+                    self._model_path = pth.name
+                    self._update_model_status()
+                    break
 
         self._refresh_profile_combo(names)
 
@@ -271,16 +294,6 @@ class MainWindow(QMainWindow):
             int(profile.anchor_match_threshold * 100)
         )
 
-        if profile.model_path:
-            model_path = self._base_dir / "data" / "models" / profile.model_path
-            if model_path.exists():
-                self.controls_panel.model_status.setText(
-                    f"Loaded: {profile.model_path}"
-                )
-                self.controls_panel.model_status.setStyleSheet(
-                    "color: green; font-size: 10px;"
-                )
-
         self.monitor_combo.setCurrentIndex(
             min(profile.monitor_index, self.monitor_combo.count() - 1)
         )
@@ -296,6 +309,32 @@ class MainWindow(QMainWindow):
             self._create_pipeline_for(name, profile)
             self._refresh_profile_combo()
             self.profile_combo.setCurrentText(name)
+
+    def _on_duplicate_profile(self) -> None:
+        from PyQt6.QtWidgets import QInputDialog
+        source = self._editing_profile
+        if not source:
+            QMessageBox.warning(self, "No Profile", "Select a profile to duplicate first.")
+            return
+        self._sync_profile_from_ui()  # make sure edits are captured
+        name, ok = QInputDialog.getText(
+            self, "Duplicate Profile",
+            f"New name (copying '{source.name}'):",
+            text=f"{source.name}_copy",
+        )
+        if not ok or not name:
+            return
+        if name in self._profiles:
+            QMessageBox.warning(self, "Name Taken", f"A profile named '{name}' already exists.")
+            return
+        # Deep-copy via dict round-trip, then rename
+        copy_data = source.to_dict()
+        copy_data["name"] = name
+        new_profile = Profile.from_dict(copy_data)
+        self._profiles[name] = new_profile
+        self._create_pipeline_for(name, new_profile)
+        self._refresh_profile_combo()
+        self.profile_combo.setCurrentText(name)
 
     def _on_save_profile(self) -> None:
         profile = self._editing_profile
@@ -520,11 +559,15 @@ class MainWindow(QMainWindow):
 
     # ── CNN Model ────────────────────────────────────────────────
 
-    def _on_train(self) -> None:
-        if not self._editing_profile:
-            QMessageBox.warning(self, "No Profile", "Create or load a profile first.")
-            return
+    def _update_model_status(self) -> None:
+        if self._model_path:
+            self.model_status_label.setText(self._model_path)
+            self.model_status_label.setStyleSheet("color: green;")
+        else:
+            self.model_status_label.setText("No model loaded")
+            self.model_status_label.setStyleSheet("color: gray;")
 
+    def _on_train(self) -> None:
         data_dir = self._base_dir / "data" / "training_data"
         if not data_dir.exists() or not any(data_dir.iterdir()):
             QMessageBox.warning(
@@ -535,10 +578,10 @@ class MainWindow(QMainWindow):
 
         models_dir = self._base_dir / "data" / "models"
         models_dir.mkdir(parents=True, exist_ok=True)
-        model_name = f"{self._editing_profile.name}_model.pth"
+        model_name = "model.pth"
         model_path = models_dir / model_name
 
-        char_classes = self._editing_profile.char_classes
+        char_classes = self._predictor.char_classes if self._predictor.is_loaded else "0123456789.-%"
         trainer = TrainerThread(
             data_dir=str(data_dir),
             output_model_path=str(model_path),
@@ -548,14 +591,9 @@ class MainWindow(QMainWindow):
 
         dialog = TrainingDialog(trainer, self)
         if dialog.exec():
-            self._editing_profile.model_path = model_name
-            self._predictor.load_model(
-                str(model_path), char_classes=char_classes,
-            )
-            self.controls_panel.model_status.setText(f"Loaded: {model_name}")
-            self.controls_panel.model_status.setStyleSheet(
-                "color: green; font-size: 10px;"
-            )
+            if self._predictor.load_model(str(model_path)):
+                self._model_path = model_name
+                self._update_model_status()
 
     def _on_load_model(self) -> None:
         models_dir = self._base_dir / "data" / "models"
@@ -564,16 +602,9 @@ class MainWindow(QMainWindow):
             self, "Load CNN Model", str(models_dir), "PyTorch Models (*.pth)"
         )
         if path:
-            char_classes = self._editing_profile.char_classes if self._editing_profile else "0123456789.-%"
-            success = self._predictor.load_model(path, char_classes=char_classes)
-            if success:
-                rel = Path(path).name
-                if self._editing_profile:
-                    self._editing_profile.model_path = rel
-                self.controls_panel.model_status.setText(f"Loaded: {rel}")
-                self.controls_panel.model_status.setStyleSheet(
-                    "color: green; font-size: 10px;"
-                )
+            if self._predictor.load_model(path):
+                self._model_path = Path(path).name
+                self._update_model_status()
             else:
                 QMessageBox.warning(self, "Load Failed", "Failed to load model.")
 
@@ -610,8 +641,64 @@ class MainWindow(QMainWindow):
         try:
             if key == keyboard.Key.f11:
                 QTimer.singleShot(0, self._on_start_stop)
+            elif key == keyboard.Key.f9:
+                QTimer.singleShot(0, self._on_stage_pressed)
+            elif key == keyboard.Key.f10:
+                QTimer.singleShot(0, self._on_commit_to_csv)
         except Exception:
             pass
+
+    def _on_stage_pressed(self) -> None:
+        if not self._last_frame_results:
+            self.statusBar().showMessage("Nothing to stage — no frame captured yet")
+            return
+        rois: dict[str, str] = {}
+        for result in self._last_frame_results.values():
+            for r in result.roi_results:
+                rois[r.name] = r.recognized_text
+        self._staged_data = {
+            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "rois": rois,
+        }
+        summary = ", ".join(f"{k}={v}" for k, v in rois.items())
+        self.statusBar().showMessage(f"Staged (F10 to commit): {summary}")
+
+    def _on_commit_to_csv(self) -> None:
+        if self._staged_data is None:
+            self.statusBar().showMessage("Nothing staged — press F9 first")
+            return
+
+        # Always build the full column list from every ROI in every profile
+        # so the header covers captures where some anchors were missing.
+        # Columns with csv_index > 0 come first (sorted ascending); the rest follow.
+        all_rois: list[tuple[int, str]] = []  # (csv_index, name)
+        seen: set[str] = set()
+        for profile in self._profiles.values():
+            for roi in profile.rois:
+                if roi.name not in seen:
+                    all_rois.append((roi.csv_index, roi.name))
+                    seen.add(roi.name)
+        all_rois.sort(key=lambda t: (t[0] == 0, t[0]))
+        all_roi_names = [name for _, name in all_rois]
+
+        fieldnames = ["timestamp"] + all_roi_names
+        file_is_new = not self._csv_path.exists() or self._csv_path.stat().st_size == 0
+
+        try:
+            self._csv_path.parent.mkdir(parents=True, exist_ok=True)
+            with self._csv_path.open("a", newline="", encoding="utf-8") as f:
+                writer = csv.DictWriter(
+                    f, fieldnames=fieldnames, extrasaction="ignore", restval=""
+                )
+                if file_is_new:
+                    writer.writeheader()
+                row: dict = {"timestamp": self._staged_data["timestamp"]}
+                row.update(self._staged_data["rois"])
+                writer.writerow(row)
+            self._staged_data = None
+            self.statusBar().showMessage(f"Committed to {self._csv_path.name}")
+        except Exception as e:
+            self.statusBar().showMessage(f"CSV write error: {e}")
 
     # ── Cleanup ──────────────────────────────────────────────────
 

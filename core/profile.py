@@ -70,6 +70,13 @@ class ROIDefinition:
     dot_width: int = 0
     # Whether this ROI is active. Disabled ROIs are skipped in the pipeline and labeler.
     enabled: bool = True
+    # Recognition mode: "cnn" = digit/char segmentation + CNN, "template" = template matching.
+    recognition_mode: str = "cnn"
+    # Directory (relative to data/) containing template images for template matching mode.
+    # Each .png/.jpg in the folder represents one word; the filename (minus extension) is the label.
+    template_dir: str = ""
+    # Column order in the exported CSV. 0 = append after all explicitly-ordered columns.
+    csv_index: int = 0
 
     def to_dict(self) -> dict:
         return {
@@ -86,6 +93,9 @@ class ROIDefinition:
             "format_pattern": self.format_pattern,
             "dot_width": self.dot_width,
             "enabled": self.enabled,
+            "recognition_mode": self.recognition_mode,
+            "template_dir": self.template_dir,
+            "csv_index": self.csv_index,
         }
 
     @classmethod
@@ -104,6 +114,9 @@ class ROIDefinition:
             format_pattern=d.get("format_pattern", ""),
             dot_width=d.get("dot_width", 0),
             enabled=d.get("enabled", True),
+            recognition_mode=d.get("recognition_mode", "cnn"),
+            template_dir=d.get("template_dir", ""),
+            csv_index=d.get("csv_index", 0),
         )
 
 
@@ -121,8 +134,6 @@ class Profile:
         default_factory=lambda: {}  # empty = search full frame; {"x":, "y":, "w":, "h":} relative to search_region
     )
     monitor_index: int = 0
-    model_path: str = ""
-    char_classes: str = "0123456789.-%"
 
     def to_dict(self) -> dict:
         return {
@@ -133,8 +144,6 @@ class Profile:
             "search_region": self.search_region,
             "anchor_roi": self.anchor_roi,
             "monitor_index": self.monitor_index,
-            "model_path": self.model_path,
-            "char_classes": self.char_classes,
         }
 
     @classmethod
@@ -147,8 +156,7 @@ class Profile:
             search_region=d.get("search_region", {"x": 0, "y": 0, "w": 800, "h": 600}),
             anchor_roi=d.get("anchor_roi", {}),
             monitor_index=d.get("monitor_index", 0),
-            model_path=d.get("model_path", ""),
-            char_classes=d.get("char_classes", "0123456789.-%"),
+            # model_path and char_classes intentionally dropped — model is global, not per-profile
         )
 
     def save(self, profiles_dir: Path) -> None:

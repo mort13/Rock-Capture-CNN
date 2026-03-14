@@ -169,8 +169,9 @@ class ControlsPanel(QWidget):
                 label.setStyleSheet("font-size: 13px;")
                 self._result_labels[key] = label
                 self._results_layout.addWidget(label)
+            conf_str = f" ({result.confidence:.2f})" if result.confidence > 0 else ""
             self._result_labels[key].setText(
-                f"{key}: {result.recognized_text or '--'}"
+                f"{key}: {result.recognized_text or '--'}{conf_str}"
             )
 
     def remove_stale_results(self, prefix: str, active_keys: set[str]) -> None:

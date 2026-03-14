@@ -71,7 +71,9 @@ class Predictor:
         predicted_char = self._char_classes[idx.item()]
         return (predicted_char, confidence.item())
 
-    def predict_sequence(self, characters: list[SegmentedChar], allowed_chars: str = "") -> str:
+    def predict_sequence(
+        self, characters: list[SegmentedChar], allowed_chars: str = ""
+    ) -> list[tuple[str, float]]:
         """Classify a sequence of segmented characters (batch inference).
 
         Args:
@@ -79,9 +81,12 @@ class Predictor:
             allowed_chars: if non-empty, only classes whose character is in this
                            string are considered — all others are masked to -inf
                            before argmax.  Empty = allow all model classes.
+
+        Returns:
+            List of (predicted_char, confidence) tuples.
         """
         if not characters or self._model is None:
-            return ""
+            return []
 
         batch = torch.stack(
             [torch.from_numpy(c.image).float().unsqueeze(0) for c in characters]
@@ -97,6 +102,10 @@ class Predictor:
                         mask[:, idx] = 0.0
                 logits = logits + mask
 
-            _, indices = torch.max(logits, dim=1)
+            probs = torch.softmax(logits, dim=1)
+            confidences, indices = torch.max(probs, dim=1)
 
-        return "".join(self._char_classes[i.item()] for i in indices)
+        return [
+            (self._char_classes[i.item()], c.item())
+            for i, c in zip(indices, confidences)
+        ]

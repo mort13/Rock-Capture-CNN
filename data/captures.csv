@@ -1,3 +1,6 @@
 timestamp,mass,resistance,inst1,inst2,mat1_1,mat1_2,mat1,mat2_1,mat2_2,mat2,mat3_1,mat3_2,mat3
 2026-03-12 11:14:25,18830,0,98,22,30,51,hephaestanite,57,90,iron,11,58,inert_materials
 2026-03-12 11:20:20,5663,0,6,56,64,67,iron,35,32,inert_materials,,,
+2026-03-12 17:03:24,1282,38,11,84,60,18,none,80,82,none,,,
+2026-03-12 17:04:01,778,28,4,01,33,14,none,58,07,none,0,02,inert_materials
+2026-03-14 11:22:28,,,,,5,35,none,,,,,,,395

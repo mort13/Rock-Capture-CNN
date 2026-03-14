@@ -3,9 +3,8 @@ Main window for Rock Capture CNN.
 Top-level QMainWindow with toolbar, preview, and controls panel.
 """
 
-import csv
 import json
-import sys
+import uuid
 from datetime import datetime
 from pathlib import Path
 from pynput import keyboard
@@ -13,9 +12,11 @@ from pynput import keyboard
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QSplitter, QToolBar, QLabel, QComboBox,
     QPushButton, QApplication, QFileDialog, QMessageBox, QSpinBox,
+    QLineEdit,
 )
 from PyQt6.QtCore import Qt, QTimer
 
+from core.config import AppConfig
 from core.profile import Profile, HUDProfile
 from core.pipeline import RecognitionPipeline, FrameResult
 from cnn.predictor import Predictor
@@ -45,7 +46,14 @@ class MainWindow(QMainWindow):
         self._fps = 10
         self._last_frame_results: dict[str, FrameResult] = {}
         self._staged_data: dict | None = None
-        self._csv_path = self._base_dir / "data" / "captures.csv"
+        self._captures_dir = self._base_dir / "data" / "captures"
+        self._config_path = self._base_dir / "data" / "config.json"
+        self._config = AppConfig.load(self._config_path)
+        self._cluster_id: int = 1
+        self._session_id = uuid.uuid4().hex[:8]
+        self._session_started_at = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+        self._session_captures: list[dict] = []
+        self._session_file: Path | None = None
         self._model_path: str = ""
 
         self._init_toolbar()
@@ -102,7 +110,22 @@ class MainWindow(QMainWindow):
         self.fps_spin.valueChanged.connect(self._on_fps_changed)
         toolbar.addWidget(self.fps_spin)
 
-        self.start_stop_btn = QPushButton("Start All (F11)")
+        toolbar.addSeparator()
+
+        toolbar.addWidget(QLabel(" Cluster: "))
+        self.cluster_id_spin = QSpinBox()
+        self.cluster_id_spin.setRange(1, 99999)
+        self.cluster_id_spin.setValue(1)
+        self.cluster_id_spin.setToolTip("Groups related captures. Press F11 to advance.")
+        self.cluster_id_spin.valueChanged.connect(self._on_cluster_id_changed)
+        toolbar.addWidget(self.cluster_id_spin)
+
+        self.cluster_advance_btn = QPushButton("+ (F11)")
+        self.cluster_advance_btn.setToolTip("Advance cluster ID by 1")
+        self.cluster_advance_btn.clicked.connect(self._on_advance_cluster_id)
+        toolbar.addWidget(self.cluster_advance_btn)
+
+        self.start_stop_btn = QPushButton("Start All")
         self.start_stop_btn.clicked.connect(self._on_start_stop)
         toolbar.addWidget(self.start_stop_btn)
 
@@ -121,6 +144,26 @@ class MainWindow(QMainWindow):
         self.train_model_btn = QPushButton("Train")
         self.train_model_btn.clicked.connect(self._on_train)
         toolbar.addWidget(self.train_model_btn)
+
+        toolbar.addSeparator()
+
+        toolbar.addWidget(QLabel(" User: "))
+        self.user_edit = QLineEdit(self._config.user)
+        self.user_edit.setMaximumWidth(80)
+        self.user_edit.editingFinished.connect(self._on_config_changed)
+        toolbar.addWidget(self.user_edit)
+
+        toolbar.addWidget(QLabel(" Org: "))
+        self.org_edit = QLineEdit(self._config.org)
+        self.org_edit.setMaximumWidth(80)
+        self.org_edit.editingFinished.connect(self._on_config_changed)
+        toolbar.addWidget(self.org_edit)
+
+        toolbar.addWidget(QLabel(" Version: "))
+        self.version_edit = QLineEdit(self._config.tool_version)
+        self.version_edit.setMaximumWidth(100)
+        self.version_edit.editingFinished.connect(self._on_config_changed)
+        toolbar.addWidget(self.version_edit)
 
     # ── HUD Profile Toolbar ──────────────────────────────────────
 
@@ -219,7 +262,7 @@ class MainWindow(QMainWindow):
             for p in self._pipelines.values():
                 p.stop()
             self._running = False
-            self.start_stop_btn.setText("Start All (F11)")
+            self.start_stop_btn.setText("Start All")
             self.start_stop_btn.setStyleSheet("")
             self.set_region_btn.setEnabled(True)
 
@@ -246,7 +289,7 @@ class MainWindow(QMainWindow):
             started = self._start_all_pipelines()
             if started:
                 self._running = True
-                self.start_stop_btn.setText("Stop All (F11)")
+                self.start_stop_btn.setText("Stop All")
                 self.start_stop_btn.setStyleSheet("background-color: #ff6666;")
                 self.set_region_btn.setEnabled(False)
 
@@ -643,7 +686,7 @@ class MainWindow(QMainWindow):
             for p in self._pipelines.values():
                 p.stop()
             self._running = False
-            self.start_stop_btn.setText("Start All (F11)")
+            self.start_stop_btn.setText("Start All")
             self.start_stop_btn.setStyleSheet("")
             self.set_region_btn.setEnabled(True)
             self.statusBar().showMessage("Capture stopped")
@@ -657,7 +700,7 @@ class MainWindow(QMainWindow):
                 )
                 return
             self._running = True
-            self.start_stop_btn.setText("Stop All (F11)")
+            self.start_stop_btn.setText("Stop All")
             self.start_stop_btn.setStyleSheet("background-color: #ff6666;")
             self.set_region_btn.setEnabled(False)
             self.statusBar().showMessage(
@@ -792,11 +835,11 @@ class MainWindow(QMainWindow):
     def _on_global_key(self, key) -> None:
         try:
             if key == keyboard.Key.f11:
-                QTimer.singleShot(0, self._on_start_stop)
+                QTimer.singleShot(0, self._on_advance_cluster_id)
             elif key == keyboard.Key.f9:
                 QTimer.singleShot(0, self._on_stage_pressed)
             elif key == keyboard.Key.f10:
-                QTimer.singleShot(0, self._on_commit_to_csv)
+                QTimer.singleShot(0, self._on_commit_to_json)
         except Exception:
             pass
 
@@ -804,53 +847,97 @@ class MainWindow(QMainWindow):
         if not self._last_frame_results:
             self.statusBar().showMessage("Nothing to stage — no frame captured yet")
             return
-        rois: dict[str, str] = {}
-        for result in self._last_frame_results.values():
-            for r in result.roi_results:
-                rois[r.name] = r.recognized_text
-        self._staged_data = {
-            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "rois": rois,
-        }
-        summary = ", ".join(f"{k}={v}" for k, v in rois.items())
-        self.statusBar().showMessage(f"Staged (F10 to commit): {summary}")
 
-    def _on_commit_to_csv(self) -> None:
+        # Build per-profile groups with ROI values, then sort by csv_index
+        profile_groups: list[tuple[int, str, dict]] = []  # (min_csv_idx, name, rois)
+        for prof_name, frame_result in self._last_frame_results.items():
+            profile = self._profiles.get(prof_name)
+            csv_idx_map = {}
+            if profile:
+                csv_idx_map = {roi.name: roi.csv_index for roi in profile.rois}
+
+            roi_entries: list[tuple[int, str, dict]] = []
+            for r in frame_result.roi_results:
+                idx = csv_idx_map.get(r.name, 0)
+                roi_entries.append((idx, r.name, {
+                    "value": r.recognized_text,
+                    "confidence": round(r.confidence, 4),
+                }))
+            roi_entries.sort(key=lambda t: (t[0] == 0, t[0]))
+            rois_dict = {name: val for _, name, val in roi_entries}
+
+            min_idx = min((i for i, _, _ in roi_entries if i > 0), default=0)
+            profile_groups.append((min_idx, prof_name, rois_dict))
+
+        profile_groups.sort(key=lambda t: (t[0] == 0, t[0]))
+        values = {name: rois for _, name, rois in profile_groups}
+
+        self._staged_data = {
+            "timestamp": datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
+            "values": values,
+        }
+        parts = []
+        for prof_name, rois in values.items():
+            for roi_name, v in rois.items():
+                parts.append(f"{roi_name}={v['value']}({v['confidence']:.2f})")
+        self.statusBar().showMessage(f"Staged (F10 to commit): {', '.join(parts)}")
+
+    def _on_commit_to_json(self) -> None:
         if self._staged_data is None:
             self.statusBar().showMessage("Nothing staged — press F9 first")
             return
 
-        # Always build the full column list from every ROI in every profile
-        # so the header covers captures where some anchors were missing.
-        # Columns with csv_index > 0 come first (sorted ascending); the rest follow.
-        all_rois: list[tuple[int, str]] = []  # (csv_index, name)
-        seen: set[str] = set()
-        for profile in self._profiles.values():
-            for roi in profile.rois:
-                if roi.name not in seen:
-                    all_rois.append((roi.csv_index, roi.name))
-                    seen.add(roi.name)
-        all_rois.sort(key=lambda t: (t[0] == 0, t[0]))
-        all_roi_names = [name for _, name in all_rois]
+        capture_id = uuid.uuid4().hex[:8]
+        capture = {
+            "timestamp": self._staged_data["timestamp"],
+            "capture_id": capture_id,
+            "cluster_id": self._cluster_id,
+            "values": self._staged_data["values"],
+        }
+        self._session_captures.append(capture)
 
-        fieldnames = ["timestamp"] + all_roi_names
-        file_is_new = not self._csv_path.exists() or self._csv_path.stat().st_size == 0
+        session_data = {
+            "session_id": self._session_id,
+            "started_at": self._session_started_at,
+            "tool_version": self._config.tool_version,
+            "source": {
+                "user": self._config.user,
+                "org": self._config.org,
+            },
+            "captures": self._session_captures,
+        }
+
+        if self._session_file is None:
+            safe_ts = self._session_started_at.replace(":", "").replace("-", "").replace("T", "_")
+            filename = f"session_{safe_ts}_{self._session_id}.json"
+            self._captures_dir.mkdir(parents=True, exist_ok=True)
+            self._session_file = self._captures_dir / filename
 
         try:
-            self._csv_path.parent.mkdir(parents=True, exist_ok=True)
-            with self._csv_path.open("a", newline="", encoding="utf-8") as f:
-                writer = csv.DictWriter(
-                    f, fieldnames=fieldnames, extrasaction="ignore", restval=""
-                )
-                if file_is_new:
-                    writer.writeheader()
-                row: dict = {"timestamp": self._staged_data["timestamp"]}
-                row.update(self._staged_data["rois"])
-                writer.writerow(row)
+            with open(self._session_file, "w", encoding="utf-8") as f:
+                json.dump(session_data, f, indent=2)
             self._staged_data = None
-            self.statusBar().showMessage(f"Committed to {self._csv_path.name}")
+            count = len(self._session_captures)
+            self.statusBar().showMessage(
+                f"Committed capture #{count} (cluster {self._cluster_id}) → {self._session_file.name}"
+            )
         except Exception as e:
-            self.statusBar().showMessage(f"CSV write error: {e}")
+            self._session_captures.pop()
+            self.statusBar().showMessage(f"JSON write error: {e}")
+
+    def _on_cluster_id_changed(self, value: int) -> None:
+        self._cluster_id = value
+
+    def _on_advance_cluster_id(self) -> None:
+        self._cluster_id += 1
+        self.cluster_id_spin.setValue(self._cluster_id)
+        self.statusBar().showMessage(f"Cluster ID → {self._cluster_id}")
+
+    def _on_config_changed(self) -> None:
+        self._config.user = self.user_edit.text().strip()
+        self._config.org = self.org_edit.text().strip()
+        self._config.tool_version = self.version_edit.text().strip()
+        self._config.save(self._config_path)
 
     # ── Cleanup ──────────────────────────────────────────────────
 

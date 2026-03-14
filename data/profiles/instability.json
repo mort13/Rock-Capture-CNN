@@ -1,18 +1,18 @@
 {
   "name": "instability",
   "anchor_template_path": "dot.jpg",
-  "anchor_match_threshold": 0.75,
+  "anchor_match_threshold": 0.54,
   "rois": [
     {
-      "name": "inst1",
-      "x_offset": -29,
+      "name": "int",
+      "x_offset": -23,
       "y_offset": -11,
-      "width": 30,
+      "width": 24,
       "height": 18,
       "filters": {
-        "brightness": 0,
+        "brightness": -10,
         "contrast": 0,
-        "threshold": 127,
+        "threshold": 219,
         "threshold_enabled": false,
         "grayscale": true,
         "invert": false,
@@ -27,10 +27,10 @@
       "enabled": true,
       "recognition_mode": "cnn",
       "template_dir": "",
-      "csv_index": 3
+      "csv_index": 1
     },
     {
-      "name": "inst2",
+      "name": "decimal",
       "x_offset": 4,
       "y_offset": -11,
       "width": 19,
@@ -53,14 +53,14 @@
       "enabled": true,
       "recognition_mode": "cnn",
       "template_dir": "",
-      "csv_index": 4
+      "csv_index": 2
     }
   ],
   "search_region": {
-    "x": 1879,
-    "y": 718,
-    "w": 115,
-    "h": 26
+    "x": 1835,
+    "y": 665,
+    "w": 107,
+    "h": 31
   },
   "anchor_roi": {},
   "monitor_index": 0

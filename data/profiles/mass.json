@@ -1,18 +1,18 @@
 {
   "name": "mass",
   "anchor_template_path": "mass.jpg",
-  "anchor_match_threshold": 0.51,
+  "anchor_match_threshold": 0.38,
   "rois": [
     {
-      "name": "mass",
-      "x_offset": 128,
-      "y_offset": 0,
-      "width": 46,
+      "name": "int",
+      "x_offset": 109,
+      "y_offset": -5,
+      "width": 40,
       "height": 18,
       "filters": {
         "brightness": 15,
         "contrast": 0,
-        "threshold": 115,
+        "threshold": 247,
         "threshold_enabled": false,
         "grayscale": true,
         "invert": false,
@@ -31,10 +31,10 @@
     }
   ],
   "search_region": {
-    "x": 1785,
-    "y": 664,
-    "w": 218,
-    "h": 33
+    "x": 1740,
+    "y": 619,
+    "w": 208,
+    "h": 29
   },
   "anchor_roi": {},
   "monitor_index": 0

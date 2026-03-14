@@ -4,7 +4,7 @@
   "anchor_match_threshold": 0.7,
   "rois": [
     {
-      "name": "resistance",
+      "name": "int",
       "x_offset": -19,
       "y_offset": -2,
       "width": 19,
@@ -31,10 +31,10 @@
     }
   ],
   "search_region": {
-    "x": 1893,
-    "y": 695,
-    "w": 94,
-    "h": 25
+    "x": 1834,
+    "y": 641,
+    "w": 96,
+    "h": 32
   },
   "anchor_roi": {},
   "monitor_index": 0

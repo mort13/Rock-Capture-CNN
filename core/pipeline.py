@@ -26,6 +26,7 @@ class ROIResult:
     filtered_image: np.ndarray
     characters: list[SegmentedChar] = field(default_factory=list)
     recognized_text: str = ""
+    confidence: float = 0.0
 
 
 @dataclass
@@ -144,6 +145,7 @@ class RecognitionPipeline(QObject):
                     # Match against the raw (unfiltered) ROI — templates are raw screenshots too
                     result = matcher.match(raw_roi)
                     text = result.label
+                    conf = result.confidence
                 else:
                     if not hasattr(self, '_tmpl_warn_logged'):
                         self._tmpl_warn_logged = set()
@@ -152,6 +154,7 @@ class RecognitionPipeline(QObject):
                         print(f"[Pipeline] Template matcher not loaded for roi='{roi_def.name}' template_dir='{roi_def.template_dir}'")
                         self._tmpl_warn_logged.add(key)
                     text = "?"
+                    conf = 0.0
                 roi_results.append(
                     ROIResult(
                         name=roi_def.name,
@@ -159,6 +162,7 @@ class RecognitionPipeline(QObject):
                         filtered_image=filtered_roi,
                         characters=[],
                         recognized_text=text,
+                        confidence=conf,
                     )
                 )
                 continue
@@ -177,19 +181,27 @@ class RecognitionPipeline(QObject):
                 characters = [c for c, lit in seg_results if c is not None]
 
                 text = ""
+                conf = 0.0
                 if not self._labeler_mode and self.predictor.is_loaded:
-                    raw_preds = list(self.predictor.predict_sequence(
+                    preds_with_conf = self.predictor.predict_sequence(
                         characters, allowed_chars=roi_def.allowed_chars,
-                    ))
+                    )
                     pred_idx = 0
                     parts = []
+                    confs = []
                     for c, lit in seg_results:
                         if lit is not None:
                             parts.append(lit)
                         else:
-                            parts.append(raw_preds[pred_idx] if pred_idx < len(raw_preds) else "?")
+                            if pred_idx < len(preds_with_conf):
+                                ch, ch_conf = preds_with_conf[pred_idx]
+                                parts.append(ch)
+                                confs.append(ch_conf)
+                            else:
+                                parts.append("?")
                             pred_idx += 1
                     text = "".join(parts)
+                    conf = sum(confs) / len(confs) if confs else 0.0
 
             else:
                 # Simple / legacy pattern: x-count overrides char_count
@@ -204,15 +216,19 @@ class RecognitionPipeline(QObject):
                 )
 
                 text = ""
+                conf = 0.0
                 if not self._labeler_mode and self.predictor.is_loaded:
-                    raw_text = self.predictor.predict_sequence(
+                    preds_with_conf = self.predictor.predict_sequence(
                         characters,
                         allowed_chars=roi_def.allowed_chars,
                     )
+                    raw_text = "".join(ch for ch, _ in preds_with_conf)
+                    confs = [c for _, c in preds_with_conf]
                     text = (
                         self._apply_format_pattern(pattern, raw_text)
                         if pattern else raw_text
                     )
+                    conf = sum(confs) / len(confs) if confs else 0.0
 
             roi_results.append(
                 ROIResult(
@@ -221,6 +237,7 @@ class RecognitionPipeline(QObject):
                     filtered_image=filtered_roi,
                     characters=characters,
                     recognized_text=text,
+                    confidence=conf,
                 )
             )
 

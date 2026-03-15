@@ -4,3 +4,4 @@ torchvision>=0.16.0
 opencv-python>=4.8.0
 numpy>=1.24.0
 pynput>=1.7.6
+duckdb>=1.0.0

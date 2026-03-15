@@ -702,7 +702,8 @@
                 },
                 {
                   "profile": "material2",
-                  "roi": "decimal"
+                  "roi": "decimal",
+                  "key": "amount_dec"
                 },
                 {
                   "profile": "volume",

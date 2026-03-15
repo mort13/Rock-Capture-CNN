@@ -11,7 +11,7 @@
       "height": 17,
       "filters": {
         "brightness": 0,
-        "contrast": 4,
+        "contrast": 100,
         "threshold": 81,
         "threshold_enabled": false,
         "grayscale": true,
@@ -37,7 +37,7 @@
       "height": 17,
       "filters": {
         "brightness": 0,
-        "contrast": -2,
+        "contrast": 100,
         "threshold": 127,
         "threshold_enabled": false,
         "grayscale": true,

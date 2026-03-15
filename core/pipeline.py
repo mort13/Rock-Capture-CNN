@@ -96,6 +96,10 @@ class RecognitionPipeline(QObject):
             profile.monitor_index,
         )
 
+    def reload_templates(self) -> None:
+        """Clear cached template matchers so they are reloaded from disk on next use."""
+        self._template_matchers.clear()
+
     def start(self, fps: int = 10) -> None:
         self.capture_engine.start(fps)
 
@@ -127,12 +131,17 @@ class RecognitionPipeline(QObject):
             roi_x = anchor.x + roi_def.x_offset
             roi_y = anchor.y + roi_def.y_offset
 
-            roi_x = max(0, roi_x)
-            roi_y = max(0, roi_y)
-            roi_x2 = min(frame.shape[1], roi_x + roi_def.width)
-            roi_y2 = min(frame.shape[0], roi_y + roi_def.height)
+            # Crop to visible area without clamping the origin, so the ROI can
+            # scroll freely beyond the frame edges (partially off-screen = cropped).
+            slice_x1 = max(0, roi_x)
+            slice_y1 = max(0, roi_y)
+            slice_x2 = min(frame.shape[1], roi_x + roi_def.width)
+            slice_y2 = min(frame.shape[0], roi_y + roi_def.height)
 
-            raw_roi = frame[roi_y:roi_y2, roi_x:roi_x2]
+            if slice_x1 >= slice_x2 or slice_y1 >= slice_y2:
+                continue
+
+            raw_roi = frame[slice_y1:slice_y2, slice_x1:slice_x2]
             if raw_roi.size == 0:
                 continue
 
@@ -319,12 +328,13 @@ class RecognitionPipeline(QObject):
             2,
         )
 
-        fh, fw = vis.shape[:2]
         for roi in rois:
-            rx = max(0, anchor.x + roi.x_offset)
-            ry = max(0, anchor.y + roi.y_offset)
-            rx2 = min(fw, rx + roi.width)
-            ry2 = min(fh, ry + roi.height)
+            rx = anchor.x + roi.x_offset
+            ry = anchor.y + roi.y_offset
+            rx2 = rx + roi.width
+            ry2 = ry + roi.height
+            # OpenCV clips drawing operations to image bounds, so out-of-frame
+            # coordinates are safe and correctly show a partial rectangle.
             cv2.rectangle(
                 vis,
                 (rx, ry),
@@ -335,7 +345,7 @@ class RecognitionPipeline(QObject):
             cv2.putText(
                 vis,
                 roi.name,
-                (rx, max(0, ry - 4)),
+                (max(0, rx), max(0, ry - 4)),
                 cv2.FONT_HERSHEY_SIMPLEX,
                 0.4,
                 (255, 255, 0),

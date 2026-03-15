@@ -176,6 +176,25 @@ class MainWindow(QMainWindow):
         self.version_edit.editingFinished.connect(self._on_config_changed)
         toolbar.addWidget(self.version_edit)
 
+        toolbar.addSeparator()
+
+        toolbar.addWidget(QLabel(" System: "))
+        self.system_edit = QLineEdit(self._config.system)
+        self.system_edit.setMaximumWidth(100)
+        self.system_edit.setToolTip("Star system where scanning takes place (e.g. Pyro)")
+        self.system_edit.editingFinished.connect(self._on_config_changed)
+        toolbar.addWidget(self.system_edit)
+
+        toolbar.addWidget(QLabel(" Gravity Well: "))
+        self.gravity_well_edit = QLineEdit(self._config.gravity_well)
+        self.gravity_well_edit.setMaximumWidth(140)
+        self.gravity_well_edit.setToolTip(
+            "Gravity well / location within the system.\n"
+            "Use / to indicate sub-levels, e.g. Pyro4, Pyro4/Rings, Pyro4/City."
+        )
+        self.gravity_well_edit.editingFinished.connect(self._on_config_changed)
+        toolbar.addWidget(self.gravity_well_edit)
+
     # ── Row 3: HUD profile toolbar ────────────────────────────────
 
     def _init_hud_toolbar(self) -> None:
@@ -742,6 +761,7 @@ class MainWindow(QMainWindow):
         if self._running:
             for p in self._pipelines.values():
                 p.stop()
+                p.reload_templates()
             self._running = False
             self.start_stop_btn.setText("Start All")
             self.start_stop_btn.setStyleSheet("")
@@ -772,6 +792,7 @@ class MainWindow(QMainWindow):
             sr = profile.search_region
             has_region = sr.get("w", 0) > 0 and sr.get("h", 0) > 0
             if pipeline.anchor_matcher.is_loaded and has_region:
+                pipeline.reload_templates()
                 pipeline.start(self._fps)
                 started += 1
         if started > 0:
@@ -1003,10 +1024,18 @@ class MainWindow(QMainWindow):
                        if k not in ("timestamp", "_structured")}
         else:
             payload = {"values": self._staged_data["values"]}
+        location: dict = {}
+        if self._config.system:
+            location["system"] = self._config.system
+        if self._config.gravity_well:
+            location["gravity_well"] = self._config.gravity_well
+            parts = self._config.gravity_well.split("/", 1)
+            location["gravity_well_root"] = parts[0].strip()
         capture = {
             "timestamp": self._staged_data["timestamp"],
             "capture_id": capture_id,
             "cluster_id": self._cluster_id,
+            **({"location": location} if location else {}),
             **payload,
         }
         self._session_captures.append(capture)
@@ -1052,6 +1081,8 @@ class MainWindow(QMainWindow):
         self._config.user = self.user_edit.text().strip()
         self._config.org = self.org_edit.text().strip()
         self._config.tool_version = self.version_edit.text().strip()
+        self._config.system = self.system_edit.text().strip()
+        self._config.gravity_well = self.gravity_well_edit.text().strip()
         self._config.save(self._config_path)
 
     # ── Cleanup ──────────────────────────────────────────────────

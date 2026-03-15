@@ -1,5 +1,7 @@
 {
   "tool_version": "rock_capture_cnn_0.3",
   "user": "Mort13",
-  "org": "RR"
+  "org": "RR",
+  "system": "Pyro",
+  "gravity_well": "Bloom"
 }

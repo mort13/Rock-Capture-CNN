@@ -11,12 +11,16 @@ class AppConfig:
     tool_version: str = "ocr_tool_0.3"
     user: str = ""
     org: str = ""
+    system: str = ""
+    gravity_well: str = ""
 
     def to_dict(self) -> dict:
         return {
             "tool_version": self.tool_version,
             "user": self.user,
             "org": self.org,
+            "system": self.system,
+            "gravity_well": self.gravity_well,
         }
 
     @classmethod
@@ -25,6 +29,8 @@ class AppConfig:
             tool_version=d.get("tool_version", "ocr_tool_0.3"),
             user=d.get("user", ""),
             org=d.get("org", ""),
+            system=d.get("system", ""),
+            gravity_well=d.get("gravity_well", ""),
         )
 
     def save(self, path: Path) -> None:

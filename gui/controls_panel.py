@@ -134,6 +134,7 @@ class ControlsPanel(QWidget):
         group = QGroupBox("Recognized Values")
         self._results_layout = QVBoxLayout(group)
         self._result_labels: dict[str, QLabel] = {}
+        self._result_history: dict[str, list[str]] = {}
         self._no_results_label = QLabel("No results yet")
         self._no_results_label.setStyleSheet("color: gray;")
         self._results_layout.addWidget(self._no_results_label)
@@ -164,15 +165,27 @@ class ControlsPanel(QWidget):
 
         for result in roi_results:
             key = f"{profile_name}/{result.name}" if profile_name else result.name
+            current_text = result.recognized_text or "--"
+
+            # Track last 10 values to detect stability.
+            history = self._result_history.setdefault(key, [])
+            history.append(current_text)
+            if len(history) > 10:
+                history.pop(0)
+            stable = len(history) == 10 and all(v == current_text for v in history)
+
             if key not in self._result_labels:
                 label = QLabel()
-                label.setStyleSheet("font-size: 13px;")
                 self._result_labels[key] = label
                 self._results_layout.addWidget(label)
             conf_str = f" ({result.confidence:.2f})" if result.confidence > 0 else ""
-            self._result_labels[key].setText(
-                f"{key}: {result.recognized_text or '--'}{conf_str}"
-            )
+            self._result_labels[key].setText(f"{key}: {current_text}{conf_str}")
+            if stable:
+                self._result_labels[key].setStyleSheet(
+                    "font-size: 13px; background-color: #90ee90; color: #000; border-radius: 3px; padding: 1px 3px;"
+                )
+            else:
+                self._result_labels[key].setStyleSheet("font-size: 13px;")
 
     def remove_stale_results(self, prefix: str, active_keys: set[str]) -> None:
         """Remove result labels whose key starts with *prefix* but is not in *active_keys*."""
@@ -181,6 +194,7 @@ class ControlsPanel(QWidget):
                 label = self._result_labels.pop(key)
                 self._results_layout.removeWidget(label)
                 label.deleteLater()
+                self._result_history.pop(key, None)
 
     def update_anchor_status(self, text: str, found: bool = True) -> None:
         color = "#0a0" if found else "#a00"

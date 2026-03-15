@@ -31,10 +31,10 @@
     }
   ],
   "search_region": {
-    "x": 1740,
-    "y": 619,
+    "x": 1747,
+    "y": 596,
     "w": 208,
-    "h": 29
+    "h": 59
   },
   "anchor_roi": {},
   "monitor_index": 0

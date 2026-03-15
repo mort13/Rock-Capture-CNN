@@ -17,7 +17,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt, QTimer
 
 from core.config import AppConfig
-from core.profile import Profile, HUDProfile
+from core.profile import Profile, HUDProfile, SchemaNode, ROIRef
 from core.pipeline import RecognitionPipeline, FrameResult
 from cnn.predictor import Predictor
 from cnn.trainer import TrainerThread
@@ -26,6 +26,7 @@ from gui.controls_panel import ControlsPanel
 from gui.region_selector import ScreenCaptureOverlay
 from gui.training_dialog import TrainingDialog
 from gui.anchor_roi_dialog import AnchorROIDialog
+from gui.output_schema_dialog import OutputSchemaDialog
 
 
 class MainWindow(QMainWindow):
@@ -55,8 +56,13 @@ class MainWindow(QMainWindow):
         self._session_captures: list[dict] = []
         self._session_file: Path | None = None
         self._model_path: str = ""
+        self._active_output_schema: list[SchemaNode] = []
+        self._active_hud_name: str = ""
 
-        self._init_toolbar()
+        self._init_capture_toolbar()
+        self.addToolBarBreak(Qt.ToolBarArea.TopToolBarArea)
+        self._init_settings_toolbar()
+        self.addToolBarBreak(Qt.ToolBarArea.TopToolBarArea)
         self._init_hud_toolbar()
         self._init_central()
         self._init_statusbar()
@@ -65,12 +71,12 @@ class MainWindow(QMainWindow):
 
         self._load_all_profiles()
 
-    # ── Toolbar ──────────────────────────────────────────────────
+    # ── Row 1: capture toolbar ────────────────────────────────────
 
-    def _init_toolbar(self) -> None:
-        toolbar = QToolBar("Main")
+    def _init_capture_toolbar(self) -> None:
+        toolbar = QToolBar("Capture")
         toolbar.setMovable(False)
-        self.addToolBar(toolbar)
+        self.addToolBar(Qt.ToolBarArea.TopToolBarArea, toolbar)
 
         toolbar.addWidget(QLabel(" Profile: "))
         self.profile_combo = QComboBox()
@@ -129,7 +135,12 @@ class MainWindow(QMainWindow):
         self.start_stop_btn.clicked.connect(self._on_start_stop)
         toolbar.addWidget(self.start_stop_btn)
 
-        toolbar.addSeparator()
+    # ── Row 2: settings toolbar ───────────────────────────────────
+
+    def _init_settings_toolbar(self) -> None:
+        toolbar = QToolBar("Settings")
+        toolbar.setMovable(False)
+        self.addToolBar(Qt.ToolBarArea.TopToolBarArea, toolbar)
 
         toolbar.addWidget(QLabel(" Model: "))
         self.model_status_label = QLabel("No model loaded")
@@ -165,7 +176,7 @@ class MainWindow(QMainWindow):
         self.version_edit.editingFinished.connect(self._on_config_changed)
         toolbar.addWidget(self.version_edit)
 
-    # ── HUD Profile Toolbar ──────────────────────────────────────
+    # ── Row 3: HUD profile toolbar ────────────────────────────────
 
     def _init_hud_toolbar(self) -> None:
         hud_toolbar = QToolBar("HUD Profiles")
@@ -191,6 +202,16 @@ class MainWindow(QMainWindow):
         self.delete_hud_btn.setToolTip("Delete the selected HUD profile file")
         self.delete_hud_btn.clicked.connect(self._on_delete_hud_profile)
         hud_toolbar.addWidget(self.delete_hud_btn)
+
+        hud_toolbar.addSeparator()
+
+        self.edit_schema_btn = QPushButton("Edit Schema…")
+        self.edit_schema_btn.setToolTip(
+            "Edit the output_schema for the active HUD profile\n"
+            "(controls how profiles are grouped in the session JSON)"
+        )
+        self.edit_schema_btn.clicked.connect(self._on_edit_schema)
+        hud_toolbar.addWidget(self.edit_schema_btn)
 
     def _refresh_hud_profile_combo(self) -> None:
         names = HUDProfile.list_profiles(self._hud_profiles_dir)
@@ -225,7 +246,7 @@ class MainWindow(QMainWindow):
         name = name.strip()
 
         # Snapshot every profile that is currently loaded
-        hud = HUDProfile(name=name)
+        hud = HUDProfile(name=name, output_schema=self._active_output_schema)
         for pname, profile in self._profiles.items():
             hud.profiles[pname] = profile.to_dict()
 
@@ -257,6 +278,8 @@ class MainWindow(QMainWindow):
             return
 
         hud = HUDProfile.load(path)
+        self._active_output_schema = hud.output_schema
+        self._active_hud_name = name
         was_running = self._running
         if was_running:
             for p in self._pipelines.values():
@@ -312,6 +335,40 @@ class MainWindow(QMainWindow):
             path.unlink()
         self._refresh_hud_profile_combo()
         self.statusBar().showMessage(f"HUD profile '{name}' deleted")
+
+    def _on_edit_schema(self) -> None:
+        """Open the output-schema editor for the active HUD profile."""
+        profile_rois = {
+            name: [roi.name for roi in profile.rois]
+            for name, profile in self._profiles.items()
+        }
+        dlg = OutputSchemaDialog(self._active_output_schema, profile_rois, parent=self)
+        if dlg.exec() != OutputSchemaDialog.DialogCode.Accepted:
+            return
+
+        new_schema = dlg.get_schema()
+        self._active_output_schema = new_schema
+
+        # Persist immediately if there is an active HUD profile on disk
+        if self._active_hud_name:
+            path = self._hud_profiles_dir / f"{self._active_hud_name}.json"
+            if path.exists():
+                try:
+                    with open(path, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                    data["output_schema"] = [n.to_dict() for n in new_schema]
+                    with open(path, "w", encoding="utf-8") as f:
+                        json.dump(data, f, indent=2)
+                    self.statusBar().showMessage(
+                        f"Output schema saved to HUD profile '{self._active_hud_name}'"
+                    )
+                except Exception as e:
+                    self.statusBar().showMessage(f"Schema save error: {e}")
+                return
+
+        self.statusBar().showMessage(
+            "Output schema updated (no HUD profile loaded — changes apply only to this session)"
+        )
 
     # ── Central Layout ───────────────────────────────────────────
 
@@ -848,11 +905,11 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage("Nothing to stage — no frame captured yet")
             return
 
-        # Build per-profile groups with ROI values, then sort by csv_index
-        profile_groups: list[tuple[int, str, dict]] = []  # (min_csv_idx, name, rois)
+        # Build per-profile ROI dicts, sorted by csv_index within each profile
+        raw: dict[str, dict] = {}  # profile_name -> {roi_name: {value, confidence}}
         for prof_name, frame_result in self._last_frame_results.items():
             profile = self._profiles.get(prof_name)
-            csv_idx_map = {}
+            csv_idx_map: dict[str, int] = {}
             if profile:
                 csv_idx_map = {roi.name: roi.csv_index for roi in profile.rois}
 
@@ -864,22 +921,74 @@ class MainWindow(QMainWindow):
                     "confidence": round(r.confidence, 4),
                 }))
             roi_entries.sort(key=lambda t: (t[0] == 0, t[0]))
-            rois_dict = {name: val for _, name, val in roi_entries}
+            raw[prof_name] = {name: val for _, name, val in roi_entries}
 
-            min_idx = min((i for i, _, _ in roi_entries if i > 0), default=0)
-            profile_groups.append((min_idx, prof_name, rois_dict))
+        def _eval_node(node: SchemaNode):
+            if node.type == "array":
+                result = []
+                for child in node.children:
+                    if isinstance(child, ROIRef):
+                        result.append(
+                            raw.get(child.profile, {}).get(
+                                child.roi, {"value": "", "confidence": 0.0}
+                            )
+                        )
+                    else:
+                        result.append(_eval_node(child))
+                return result
+            else:  # object
+                result = {}
+                for child in node.children:
+                    if isinstance(child, ROIRef):
+                        out_key = child.key or child.roi
+                        result[out_key] = raw.get(child.profile, {}).get(
+                            child.roi, {"value": "", "confidence": 0.0}
+                        )
+                    else:
+                        result[child.key] = _eval_node(child)
+                return result
 
-        profile_groups.sort(key=lambda t: (t[0] == 0, t[0]))
-        values = {name: rois for _, name, rois in profile_groups}
+        # Apply output schema if one is active, otherwise fall back to flat "values" dict
+        if self._active_output_schema:
+            structured = {node.key: _eval_node(node) for node in self._active_output_schema}
+            self._staged_data = {
+                "timestamp": datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
+                "_structured": True,
+                **structured,
+            }
+        else:
+            # Legacy flat format
+            profile_groups: list[tuple[int, str, dict]] = []
+            for prof_name, rois_dict in raw.items():
+                min_idx = min(
+                    (csv_idx_map.get(r, 0) for r in rois_dict),
+                    default=0,
+                )
+                profile_groups.append((min_idx, prof_name, rois_dict))
+            profile_groups.sort(key=lambda t: (t[0] == 0, t[0]))
+            values = {name: rois for _, name, rois in profile_groups}
+            self._staged_data = {
+                "timestamp": datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
+                "_structured": False,
+                "values": values,
+            }
 
-        self._staged_data = {
-            "timestamp": datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
-            "values": values,
-        }
-        parts = []
-        for prof_name, rois in values.items():
-            for roi_name, v in rois.items():
-                parts.append(f"{roi_name}={v['value']}({v['confidence']:.2f})")
+        # Status bar preview
+        parts: list[str] = []
+        for key, val in self._staged_data.items():
+            if key in ("timestamp", "_structured"):
+                continue
+            if isinstance(val, list):
+                for item in val:
+                    for roi_name, v in item.items():
+                        parts.append(f"{roi_name}={v['value']}({v['confidence']:.2f})")
+            elif isinstance(val, dict):
+                for sub_k, sub_v in val.items():
+                    if isinstance(sub_v, dict) and "value" in sub_v:
+                        parts.append(f"{sub_k}={sub_v['value']}({sub_v['confidence']:.2f})")
+                    elif isinstance(sub_v, dict):
+                        for roi_name, v in sub_v.items():
+                            parts.append(f"{roi_name}={v['value']}({v['confidence']:.2f})")
         self.statusBar().showMessage(f"Staged (F10 to commit): {', '.join(parts)}")
 
     def _on_commit_to_json(self) -> None:
@@ -888,11 +997,17 @@ class MainWindow(QMainWindow):
             return
 
         capture_id = uuid.uuid4().hex[:8]
+        is_structured = self._staged_data.get("_structured", False)
+        if is_structured:
+            payload = {k: v for k, v in self._staged_data.items()
+                       if k not in ("timestamp", "_structured")}
+        else:
+            payload = {"values": self._staged_data["values"]}
         capture = {
             "timestamp": self._staged_data["timestamp"],
             "capture_id": capture_id,
             "cluster_id": self._cluster_id,
-            "values": self._staged_data["values"],
+            **payload,
         }
         self._session_captures.append(capture)
 

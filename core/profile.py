@@ -182,22 +182,77 @@ class Profile:
 
 
 @dataclass
+class ROIRef:
+    """A leaf reference to a single ROI from one profile.
+
+    ``key`` is the output JSON key; if empty the ROI name is used.
+    """
+
+    profile: str
+    roi: str
+    key: str = ""
+
+    def to_dict(self) -> dict:
+        d: dict = {"profile": self.profile, "roi": self.roi}
+        if self.key:
+            d["key"] = self.key
+        return d
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "ROIRef":
+        return cls(profile=d["profile"], roi=d["roi"], key=d.get("key", ""))
+
+
+@dataclass
+class SchemaNode:
+    """A recursive tree node in the output schema.
+
+    ``type`` controls how children are serialized:
+    - "object" — children become key/value pairs in a dict
+    - "array"  — children become elements of a JSON array
+    """
+
+    key: str
+    type: str = "object"  # "object" | "array"
+    children: list = field(default_factory=list)  # list[ROIRef | SchemaNode]
+
+    def to_dict(self) -> dict:
+        return {"key": self.key, "type": self.type, "children": [c.to_dict() for c in self.children]}
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "SchemaNode":
+        children = []
+        for c in d.get("children", []):
+            children.append(ROIRef.from_dict(c) if "profile" in c else SchemaNode.from_dict(c))
+        return cls(key=d["key"], type=d.get("type", "object"), children=children)
+
+
+@dataclass
 class HUDProfile:
     """A named snapshot of all small profiles for a specific ship / HUD layout.
 
     Storing one HUD profile bundles the anchor, search-region, and ROI settings
     of every individual profile so that switching ships restores the complete setup.
+
+    The optional ``output_schema`` defines how raw profile results are structured
+    when committed to the session JSON.  Profiles not covered by any group are
+    collected under a fallback ``"misc"`` singleton group so no data is lost.
     """
 
     name: str
     profiles: dict = field(default_factory=dict)  # profile_name -> profile.to_dict()
+    output_schema: list[SchemaNode] = field(default_factory=list)
 
     def to_dict(self) -> dict:
-        return {"name": self.name, "profiles": self.profiles}
+        d: dict = {"name": self.name, "profiles": self.profiles}
+        if self.output_schema:
+            d["output_schema"] = [n.to_dict() for n in self.output_schema]
+        return d
 
     @classmethod
     def from_dict(cls, d: dict) -> "HUDProfile":
-        return cls(name=d["name"], profiles=d.get("profiles", {}))
+        schema = [SchemaNode.from_dict(n) for n in d.get("output_schema", [])]
+        return cls(name=d["name"], profiles=d.get("profiles", {}), output_schema=schema)
 
     def save(self, hud_profiles_dir: Path) -> None:
         """Save HUD profile as JSON to hud_profiles_dir/{self.name}.json."""

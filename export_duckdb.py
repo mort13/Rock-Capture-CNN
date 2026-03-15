@@ -339,12 +339,12 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Export session JSONs to DuckDB")
     parser.add_argument(
         "--captures", type=Path,
-        default=Path(__file__).parent / "data" / "captures",
+        default=Path(__file__).parent.parent / "Rock Capture Database" / "captures",
         help="Directory containing session_*.json files",
     )
     parser.add_argument(
         "--db", type=Path,
-        default=Path(__file__).parent / "data" / "scans.duckdb",
+        default=Path(__file__).parent.parent / "Rock Capture Database" / "scans.duckdb",
         help="Output DuckDB file path",
     )
     args = parser.parse_args()

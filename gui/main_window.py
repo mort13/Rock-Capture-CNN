@@ -47,7 +47,7 @@ class MainWindow(QMainWindow):
         self._fps = 10
         self._last_frame_results: dict[str, FrameResult] = {}
         self._staged_data: dict | None = None
-        self._captures_dir = self._base_dir / "data" / "captures"
+        self._captures_dir = self._base_dir.parent / "Rock Capture Database" / "captures"
         self._config_path = self._base_dir / "data" / "config.json"
         self._config = AppConfig.load(self._config_path)
         self._cluster_id: int = 1

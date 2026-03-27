@@ -6,7 +6,7 @@ Hosts anchor, ROI editor, filter, CNN model, results, and labeler widgets.
 from pathlib import Path
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QScrollArea, QGroupBox, QPushButton, QLabel,
-    QHBoxLayout, QSlider, QFileDialog,
+    QHBoxLayout, QSlider, QFileDialog, QLineEdit,
 )
 from PyQt6.QtCore import Qt, pyqtSignal
 
@@ -138,6 +138,9 @@ class ControlsPanel(QWidget):
         self._no_results_label = QLabel("No results yet")
         self._no_results_label.setStyleSheet("color: gray;")
         self._results_layout.addWidget(self._no_results_label)
+        # Staged editable fields (key -> QLineEdit)
+        self._staged_edits: dict[str, QLineEdit] = {}
+        self._is_staged = False
         return group
 
     def _on_anchor_thresh_changed(self) -> None:
@@ -159,7 +162,10 @@ class ControlsPanel(QWidget):
         self.filters_changed.emit(settings)
 
     def update_results(self, roi_results: list, profile_name: str = "") -> None:
-        """Update the results display with new recognized values."""
+        """Update the results display with new recognized values (skipped while staged)."""
+        if self._is_staged:
+            return
+
         if self._no_results_label.isVisible() and roi_results:
             self._no_results_label.hide()
 
@@ -186,6 +192,49 @@ class ControlsPanel(QWidget):
                 )
             else:
                 self._result_labels[key].setStyleSheet("font-size: 13px;")
+
+    def freeze_staged(self, staged_values: dict[str, str]) -> None:
+        """Replace result labels with editable fields frozen to staged values."""
+        self._is_staged = True
+        # Hide live labels
+        for label in self._result_labels.values():
+            label.hide()
+        self._no_results_label.hide()
+        # Create editable fields for each staged entry
+        for key, value in staged_values.items():
+            row = QHBoxLayout()
+            lbl = QLabel(f"{key}:")
+            lbl.setStyleSheet("font-size: 13px; min-width: 100px;")
+            edit = QLineEdit(value)
+            edit.setStyleSheet(
+                "font-size: 13px; background-color: #ffffcc; padding: 2px;"
+            )
+            edit.setPlaceholderText("(empty = no value)")
+            row.addWidget(lbl)
+            row.addWidget(edit)
+            container = QWidget()
+            container.setLayout(row)
+            self._results_layout.addWidget(container)
+            self._staged_edits[key] = edit
+
+    def get_staged_edits(self) -> dict[str, str]:
+        """Return the current edited staged values."""
+        return {key: edit.text() for key, edit in self._staged_edits.items()}
+
+    def unfreeze_staged(self) -> None:
+        """Remove staged edit fields and restore live result labels."""
+        self._is_staged = False
+        for key in list(self._staged_edits):
+            edit = self._staged_edits.pop(key)
+            container = edit.parentWidget()
+            if container:
+                self._results_layout.removeWidget(container)
+                container.deleteLater()
+        # Show live labels again
+        for label in self._result_labels.values():
+            label.show()
+        if not self._result_labels:
+            self._no_results_label.show()
 
     def remove_stale_results(self, prefix: str, active_keys: set[str]) -> None:
         """Remove result labels whose key starts with *prefix* but is not in *active_keys*."""

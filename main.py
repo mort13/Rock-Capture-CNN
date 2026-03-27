@@ -11,6 +11,9 @@ project_root = str(Path(__file__).resolve().parent)
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
+# torch must be imported before PyQt6 to avoid a DLL conflict on Windows
+import torch  # noqa: F401
+
 from PyQt6.QtWidgets import QApplication
 from gui.main_window import MainWindow
 

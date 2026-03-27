@@ -4,6 +4,7 @@ Top-level QMainWindow with toolbar, preview, and controls panel.
 """
 
 import json
+import re
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -11,8 +12,8 @@ from pynput import keyboard
 
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QSplitter, QToolBar, QLabel, QComboBox,
-    QPushButton, QApplication, QFileDialog, QMessageBox, QSpinBox,
-    QLineEdit,
+    QPushButton, QApplication, QFileDialog, QMessageBox,
+    QLineEdit, QSpinBox,
 )
 from PyQt6.QtCore import Qt, QTimer
 
@@ -50,7 +51,9 @@ class MainWindow(QMainWindow):
         self._captures_dir = self._base_dir.parent / "Rock Capture Database" / "captures"
         self._config_path = self._base_dir / "data" / "config.json"
         self._config = AppConfig.load(self._config_path)
-        self._cluster_id: int = 1
+        self._cluster_id: str = str(uuid.uuid4())
+        self._cluster_history: list[str] = [self._cluster_id]
+        self._cluster_history_index: int = 0
         self._session_id = uuid.uuid4().hex[:8]
         self._session_started_at = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
         self._session_captures: list[dict] = []
@@ -119,15 +122,19 @@ class MainWindow(QMainWindow):
         toolbar.addSeparator()
 
         toolbar.addWidget(QLabel(" Cluster: "))
-        self.cluster_id_spin = QSpinBox()
-        self.cluster_id_spin.setRange(1, 99999)
-        self.cluster_id_spin.setValue(1)
-        self.cluster_id_spin.setToolTip("Groups related captures. Press F11 to advance.")
-        self.cluster_id_spin.valueChanged.connect(self._on_cluster_id_changed)
-        toolbar.addWidget(self.cluster_id_spin)
+        self.cluster_prev_btn = QPushButton("< Prev")
+        self.cluster_prev_btn.setToolTip("Go back to previous cluster ID")
+        self.cluster_prev_btn.clicked.connect(self._on_prev_cluster_id)
+        toolbar.addWidget(self.cluster_prev_btn)
 
-        self.cluster_advance_btn = QPushButton("+ (F11)")
-        self.cluster_advance_btn.setToolTip("Advance cluster ID by 1")
+        self.cluster_id_label = QLabel(self._cluster_id[:8] + "…")
+        self.cluster_id_label.setToolTip(self._cluster_id)
+        self.cluster_id_label.setMinimumWidth(80)
+        self.cluster_id_label.setStyleSheet("font-family: monospace; font-size: 11px;")
+        toolbar.addWidget(self.cluster_id_label)
+
+        self.cluster_advance_btn = QPushButton("Next > (F11)")
+        self.cluster_advance_btn.setToolTip("Advance to a new cluster ID")
         self.cluster_advance_btn.clicked.connect(self._on_advance_cluster_id)
         toolbar.addWidget(self.cluster_advance_btn)
 
@@ -178,22 +185,18 @@ class MainWindow(QMainWindow):
 
         toolbar.addSeparator()
 
-        toolbar.addWidget(QLabel(" System: "))
-        self.system_edit = QLineEdit(self._config.system)
-        self.system_edit.setMaximumWidth(100)
-        self.system_edit.setToolTip("Star system where scanning takes place (e.g. Pyro)")
-        self.system_edit.editingFinished.connect(self._on_config_changed)
-        toolbar.addWidget(self.system_edit)
-
-        toolbar.addWidget(QLabel(" Gravity Well: "))
-        self.gravity_well_edit = QLineEdit(self._config.gravity_well)
-        self.gravity_well_edit.setMaximumWidth(140)
-        self.gravity_well_edit.setToolTip(
-            "Gravity well / location within the system.\n"
-            "Use / to indicate sub-levels, e.g. Pyro4, Pyro4/Rings, Pyro4/City."
+        toolbar.addWidget(QLabel(" Location: "))
+        location_str = self._config.system
+        if self._config.gravity_well:
+            location_str += "/" + self._config.gravity_well if location_str else self._config.gravity_well
+        self.location_edit = QLineEdit(location_str)
+        self.location_edit.setMaximumWidth(250)
+        self.location_edit.setToolTip(
+            "Location path: System/GravityWell/Region/Place\n"
+            "e.g. Pyro/Bloom, Stanton/Hurston/Aberdeen, Pyro/Bloom/Outpost Alpha"
         )
-        self.gravity_well_edit.editingFinished.connect(self._on_config_changed)
-        toolbar.addWidget(self.gravity_well_edit)
+        self.location_edit.editingFinished.connect(self._on_config_changed)
+        toolbar.addWidget(self.location_edit)
 
     # ── Row 3: HUD profile toolbar ────────────────────────────────
 
@@ -921,6 +924,71 @@ class MainWindow(QMainWindow):
         except Exception:
             pass
 
+    def _collect_flat_staged_values(self) -> dict[str, str]:
+        """Collect a flat key->value dict from staged data for display in edit fields."""
+        flat: dict[str, str] = {}
+        if not self._staged_data:
+            return flat
+
+        def _flatten(obj, prefix=""):
+            if isinstance(obj, list):
+                for i, item in enumerate(obj):
+                    _flatten(item, f"{prefix}[{i}]")
+            elif isinstance(obj, dict):
+                if "value" in obj and "confidence" in obj:
+                    flat[prefix] = obj["value"] or ""
+                else:
+                    for k, v in obj.items():
+                        _flatten(v, f"{prefix}/{k}" if prefix else k)
+
+        for key, val in self._staged_data.items():
+            if key in ("timestamp", "_structured"):
+                continue
+            _flatten(val, key)
+        return flat
+
+    def _apply_edits_to_staged(self, edits: dict[str, str]) -> None:
+        """Write edited values back into self._staged_data."""
+        if not self._staged_data:
+            return
+
+        def _set_value(obj, path_parts: list[str], value: str):
+            if len(path_parts) == 0:
+                return
+            key = path_parts[0]
+            # Handle array index like [0]
+            if key.startswith("[") and key.endswith("]"):
+                idx = int(key[1:-1])
+                if isinstance(obj, list) and idx < len(obj):
+                    if len(path_parts) == 1:
+                        if isinstance(obj[idx], dict) and "value" in obj[idx]:
+                            obj[idx]["value"] = value if value else None
+                    else:
+                        _set_value(obj[idx], path_parts[1:], value)
+            elif isinstance(obj, dict):
+                if key in obj:
+                    if len(path_parts) == 1:
+                        if isinstance(obj[key], dict) and "value" in obj[key]:
+                            obj[key]["value"] = value if value else None
+                    else:
+                        _set_value(obj[key], path_parts[1:], value)
+
+        for flat_key, value in edits.items():
+            # Split path: "compositions/[0]/material" -> ["compositions", "[0]", "material"]
+            tokens = []
+            for p in flat_key.replace("/", "\x00").split("\x00"):
+                if p:
+                    tokens.append(p)
+            if not tokens:
+                continue
+            top_key = tokens[0]
+            if top_key in self._staged_data:
+                if len(tokens) == 1:
+                    if isinstance(self._staged_data[top_key], dict) and "value" in self._staged_data[top_key]:
+                        self._staged_data[top_key]["value"] = value if value else None
+                else:
+                    _set_value(self._staged_data[top_key], tokens[1:], value)
+
     def _on_stage_pressed(self) -> None:
         if not self._last_frame_results:
             self.statusBar().showMessage("Nothing to stage — no frame captured yet")
@@ -994,43 +1062,47 @@ class MainWindow(QMainWindow):
                 "values": values,
             }
 
-        # Status bar preview
-        parts: list[str] = []
-        for key, val in self._staged_data.items():
-            if key in ("timestamp", "_structured"):
-                continue
-            if isinstance(val, list):
-                for item in val:
-                    for roi_name, v in item.items():
-                        parts.append(f"{roi_name}={v['value']}({v['confidence']:.2f})")
-            elif isinstance(val, dict):
-                for sub_k, sub_v in val.items():
-                    if isinstance(sub_v, dict) and "value" in sub_v:
-                        parts.append(f"{sub_k}={sub_v['value']}({sub_v['confidence']:.2f})")
-                    elif isinstance(sub_v, dict):
-                        for roi_name, v in sub_v.items():
-                            parts.append(f"{roi_name}={v['value']}({v['confidence']:.2f})")
-        self.statusBar().showMessage(f"Staged (F10 to commit): {', '.join(parts)}")
+        # Freeze the controls panel to show editable staged values
+        flat_values = self._collect_flat_staged_values()
+        self.controls_panel.freeze_staged(flat_values)
+
+        self.statusBar().showMessage(
+            f"Staged {len(flat_values)} values — edit if needed, then F10 to commit"
+        )
+
+    def _parse_location(self) -> dict:
+        """Parse the location string into the structured JSON format."""
+        loc_text = self.location_edit.text().strip()
+        if not loc_text:
+            return {}
+        parts = [p.strip() for p in loc_text.split("/")]
+        # Pad to 4 parts: system, gravity_well, region, place
+        while len(parts) < 4:
+            parts.append(None)
+        return {
+            "system": parts[0],
+            "gravity_well": parts[1],
+            "region": parts[2],
+            "place": parts[3],
+        }
 
     def _on_commit_to_json(self) -> None:
         if self._staged_data is None:
             self.statusBar().showMessage("Nothing staged — press F9 first")
             return
 
-        capture_id = uuid.uuid4().hex[:8]
+        # Apply any edits the user made in the frozen staged fields
+        edits = self.controls_panel.get_staged_edits()
+        self._apply_edits_to_staged(edits)
+
+        capture_id = str(uuid.uuid4())
         is_structured = self._staged_data.get("_structured", False)
         if is_structured:
             payload = {k: v for k, v in self._staged_data.items()
                        if k not in ("timestamp", "_structured")}
         else:
             payload = {"values": self._staged_data["values"]}
-        location: dict = {}
-        if self._config.system:
-            location["system"] = self._config.system
-        if self._config.gravity_well:
-            location["gravity_well"] = self._config.gravity_well
-            parts = self._config.gravity_well.split("/", 1)
-            location["gravity_well_root"] = parts[0].strip()
+        location = self._parse_location()
         capture = {
             "timestamp": self._staged_data["timestamp"],
             "capture_id": capture_id,
@@ -1061,28 +1133,51 @@ class MainWindow(QMainWindow):
             with open(self._session_file, "w", encoding="utf-8") as f:
                 json.dump(session_data, f, indent=2)
             self._staged_data = None
+            # Unfreeze to restore live preview
+            self.controls_panel.unfreeze_staged()
             count = len(self._session_captures)
             self.statusBar().showMessage(
-                f"Committed capture #{count} (cluster {self._cluster_id}) → {self._session_file.name}"
+                f"Committed capture #{count} (cluster {self._cluster_id[:8]}…) → {self._session_file.name}"
             )
         except Exception as e:
             self._session_captures.pop()
             self.statusBar().showMessage(f"JSON write error: {e}")
 
-    def _on_cluster_id_changed(self, value: int) -> None:
-        self._cluster_id = value
+    def _on_prev_cluster_id(self) -> None:
+        if self._cluster_history_index > 0:
+            self._cluster_history_index -= 1
+            self._cluster_id = self._cluster_history[self._cluster_history_index]
+            self._update_cluster_label()
+            self.statusBar().showMessage(f"Cluster ID ← {self._cluster_id[:8]}…")
+        else:
+            self.statusBar().showMessage("Already at first cluster ID")
 
     def _on_advance_cluster_id(self) -> None:
-        self._cluster_id += 1
-        self.cluster_id_spin.setValue(self._cluster_id)
-        self.statusBar().showMessage(f"Cluster ID → {self._cluster_id}")
+        # If we're not at the end of history, move forward
+        if self._cluster_history_index < len(self._cluster_history) - 1:
+            self._cluster_history_index += 1
+            self._cluster_id = self._cluster_history[self._cluster_history_index]
+        else:
+            # Generate a new UUID and append to history
+            self._cluster_id = str(uuid.uuid4())
+            self._cluster_history.append(self._cluster_id)
+            self._cluster_history_index = len(self._cluster_history) - 1
+        self._update_cluster_label()
+        self.statusBar().showMessage(f"Cluster ID → {self._cluster_id[:8]}…")
+
+    def _update_cluster_label(self) -> None:
+        self.cluster_id_label.setText(self._cluster_id[:8] + "…")
+        self.cluster_id_label.setToolTip(self._cluster_id)
 
     def _on_config_changed(self) -> None:
         self._config.user = self.user_edit.text().strip()
         self._config.org = self.org_edit.text().strip()
         self._config.tool_version = self.version_edit.text().strip()
-        self._config.system = self.system_edit.text().strip()
-        self._config.gravity_well = self.gravity_well_edit.text().strip()
+        # Parse location string into system and gravity_well
+        loc_text = self.location_edit.text().strip()
+        parts = [p.strip() for p in loc_text.split("/", 1)] if loc_text else ["", ""]
+        self._config.system = parts[0] if len(parts) > 0 else ""
+        self._config.gravity_well = parts[1] if len(parts) > 1 else ""
         self._config.save(self._config_path)
 
     # ── Cleanup ──────────────────────────────────────────────────

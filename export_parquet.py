@@ -1,14 +1,15 @@
 """
-Export captured session JSON files into a DuckDB database.
+Export captured session JSON files into two Parquet files.
 
-The export is driven by a declarative field specification that controls:
-- Which JSON fields are extracted
-- How *_int / *_dec pairs are recombined into a single number
-- Which confidence scores are kept
+    scans.parquet        — one row per capture (session metadata + scan fields)
+    compositions.parquet — one row per material entry, joined by capture_id
+
+The export is driven by the same declarative field specification used in
+export_duckdb.py.
 
 Run:
-    python export_duckdb.py                           # default paths
-    python export_duckdb.py --captures data/captures --db data/scans.duckdb
+    python export_parquet.py                           # default paths
+    python export_parquet.py --captures data/captures --out data/
 """
 
 from __future__ import annotations
@@ -21,14 +22,15 @@ from pathlib import Path
 from typing import Any
 
 try:
-    import duckdb
+    import pyarrow as pa
+    import pyarrow.parquet as pq
 except ImportError:
-    print("duckdb is required:  pip install duckdb", file=sys.stderr)
+    print("pyarrow is required:  pip install pyarrow", file=sys.stderr)
     sys.exit(1)
 
 
 # ═══════════════════════════════════════════════════════════════════
-#  Field specification
+#  Field specification  (mirrors export_duckdb.py)
 # ═══════════════════════════════════════════════════════════════════
 
 @dataclass
@@ -39,7 +41,7 @@ class Field:
         JSON key inside the scan dict (e.g. "mass", "instability_int").
         For composite fields supply the shared prefix (e.g. "instability").
     column:
-        Output column name in the DB.  Defaults to *source*.
+        Output column name.  Defaults to *source*.
     kind:
         "text"      — raw string value
         "int"       — cast to integer
@@ -75,24 +77,24 @@ class ExportSpec:
     """Full specification of what to export and how."""
     scan_fields: list[Field] = field(default_factory=list)
     material_fields: list[MaterialField] = field(default_factory=list)
-    material_min_confidence: bool = True  # emit a min_confidence per material row
-    aliases: dict[str, str] = field(default_factory=dict)  # raw OCR name -> display name
+    material_min_confidence: bool = True
+    aliases: dict[str, str] = field(default_factory=dict)
 
 
 # ─── Default spec matching the mole HUD profile ──────────────────
 
 DEFAULT_SPEC = ExportSpec(
     scan_fields=[
-        Field("deposit",    "deposit",     "text",      confidence=True),
-        Field("mass",       "mass",        "int",       confidence=True),
-        Field("resistance", "resistance",  "int",       confidence=True),
-        Field("instability","instability", "composite", confidence=True),
-        Field("volume",     "volume",      "composite", confidence=True),
+        Field("deposit",     "deposit",     "text",      confidence=True),
+        Field("mass",        "mass",        "int",       confidence=True),
+        Field("resistance",  "resistance",  "int",       confidence=True),
+        Field("instability", "instability", "composite", confidence=True),
+        Field("volume",      "volume",      "composite", confidence=True),
     ],
     material_fields=[
-        MaterialField("type",   "type",   "text"),
-        MaterialField("amount", "amount", "composite"),
-        MaterialField("quality","quality", "int"),
+        MaterialField("type",    "type",    "text"),
+        MaterialField("amount",  "amount",  "composite"),
+        MaterialField("quality", "quality", "int"),
     ],
     material_min_confidence=True,
     aliases={
@@ -108,12 +110,10 @@ DEFAULT_SPEC = ExportSpec(
 # ═══════════════════════════════════════════════════════════════════
 
 def _get_entry(scan: dict, key: str) -> dict | None:
-    """Return the {value, confidence} dict for *key*, or None."""
     return scan.get(key)
 
 
 def _extract_value(scan: dict, f: Field) -> Any:
-    """Pull the value for a Field from the scan dict."""
     if f.kind == "composite":
         int_entry = _get_entry(scan, f"{f.source}_int")
         dec_entry = _get_entry(scan, f"{f.source}_dec")
@@ -137,11 +137,10 @@ def _extract_value(scan: dict, f: Field) -> Any:
             return float(raw)
         except (ValueError, TypeError):
             return None
-    return raw  # text
+    return raw
 
 
 def _extract_confidence(scan: dict, f: Field) -> float | None:
-    """Pull the confidence(s) for a Field.  For composite, return the min."""
     if f.kind == "composite":
         confs = []
         for suffix in ("_int", "_dec"):
@@ -156,7 +155,6 @@ def _extract_confidence(scan: dict, f: Field) -> float | None:
 
 
 def _extract_material_value(mat: dict, mf: MaterialField) -> Any:
-    """Pull a value from one composition entry."""
     if mf.kind == "composite":
         int_entry = mat.get(f"{mf.source}_int")
         dec_entry = mat.get(f"{mf.source}_dec")
@@ -184,11 +182,11 @@ def _extract_material_value(mat: dict, mf: MaterialField) -> Any:
 
 
 def _material_min_confidence(mat: dict) -> float | None:
-    """Return the minimum confidence across all entries in a material dict."""
-    confs = []
-    for v in mat.values():
-        if isinstance(v, dict) and "confidence" in v:
-            confs.append(v["confidence"])
+    confs = [
+        v["confidence"]
+        for v in mat.values()
+        if isinstance(v, dict) and "confidence" in v
+    ]
     return min(confs) if confs else None
 
 
@@ -196,15 +194,13 @@ def _material_min_confidence(mat: dict) -> float | None:
 #  Row building
 # ═══════════════════════════════════════════════════════════════════
 
-def _build_scan_row(
-    session: dict, capture: dict, spec: ExportSpec
-) -> dict:
+def _build_scan_row(session: dict, capture: dict, spec: ExportSpec) -> dict:
     scan = capture.get("scan", {})
     row: dict[str, Any] = {
         "session_id": session.get("session_id"),
-        "user": session.get("source", {}).get("user"),
-        "org": session.get("source", {}).get("org"),
-        "timestamp": capture.get("timestamp"),
+        "user":       session.get("source", {}).get("user"),
+        "org":        session.get("source", {}).get("org"),
+        "timestamp":  capture.get("timestamp"),
         "capture_id": capture.get("capture_id"),
         "cluster_id": capture.get("cluster_id"),
     }
@@ -215,16 +211,14 @@ def _build_scan_row(
     return row
 
 
-def _build_material_rows(
-    capture: dict, spec: ExportSpec
-) -> list[dict]:
+def _build_material_rows(capture: dict, spec: ExportSpec) -> list[dict]:
     scan = capture.get("scan", {})
     composition = scan.get("composition", [])
     rows = []
     for idx, mat in enumerate(composition):
         row: dict[str, Any] = {
             "capture_id": capture.get("capture_id"),
-            "mat_index": idx,
+            "mat_index":  idx,
         }
         for mf in spec.material_fields:
             val = _extract_material_value(mat, mf)
@@ -238,58 +232,56 @@ def _build_material_rows(
 
 
 # ═══════════════════════════════════════════════════════════════════
-#  DuckDB export
+#  PyArrow schema helpers
 # ═══════════════════════════════════════════════════════════════════
 
-def _create_tables(con: duckdb.DuckDBPyConnection, spec: ExportSpec) -> None:
-    # ── scans table ───────────────────────────────────────────────
-    cols = [
-        "session_id  TEXT",
-        "user        TEXT",
-        "org         TEXT",
-        "timestamp   TEXT",
-        "capture_id  TEXT PRIMARY KEY",
-        "cluster_id  INTEGER",
+def _scan_schema(spec: ExportSpec) -> pa.Schema:
+    fields = [
+        pa.field("session_id", pa.string()),
+        pa.field("user",       pa.string()),
+        pa.field("org",        pa.string()),
+        pa.field("timestamp",  pa.string()),
+        pa.field("capture_id", pa.string()),
+        pa.field("cluster_id", pa.string()),
     ]
+    type_map = {"text": pa.string(), "int": pa.int64(),
+                "float": pa.float64(), "composite": pa.float64()}
     for f in spec.scan_fields:
-        sql_type = {"text": "TEXT", "int": "INTEGER", "float": "DOUBLE",
-                     "composite": "DOUBLE"}[f.kind]
-        cols.append(f"{f.column}  {sql_type}")
+        fields.append(pa.field(f.column, type_map[f.kind]))
         if f.confidence:
-            cols.append(f"{f.column}_conf  DOUBLE")
+            fields.append(pa.field(f"{f.column}_conf", pa.float64()))
+    return pa.schema(fields)
 
-    con.execute(f"CREATE OR REPLACE TABLE scans (\n  {',\n  '.join(cols)}\n)")
 
-    # ── compositions table ────────────────────────────────────────
-    mat_cols = [
-        "capture_id      TEXT REFERENCES scans(capture_id)",
-        "mat_index        INTEGER",
+def _material_schema(spec: ExportSpec) -> pa.Schema:
+    fields = [
+        pa.field("capture_id", pa.string()),
+        pa.field("mat_index",  pa.int64()),
     ]
+    type_map = {"text": pa.string(), "int": pa.int64(),
+                "float": pa.float64(), "composite": pa.float64()}
     for mf in spec.material_fields:
-        sql_type = {"text": "TEXT", "int": "INTEGER", "float": "DOUBLE",
-                     "composite": "DOUBLE"}[mf.kind]
-        mat_cols.append(f"{mf.column}  {sql_type}")
+        fields.append(pa.field(mf.column, type_map[mf.kind]))
     if spec.material_min_confidence:
-        mat_cols.append("min_confidence  DOUBLE")
+        fields.append(pa.field("min_confidence", pa.float64()))
+    return pa.schema(fields)
 
-    con.execute(
-        f"CREATE OR REPLACE TABLE compositions (\n  {',\n  '.join(mat_cols)},\n"
-        f"  PRIMARY KEY (capture_id, mat_index)\n)"
-    )
 
-    # ── aliases table ─────────────────────────────────────────────
-    con.execute(
-        "CREATE OR REPLACE TABLE aliases (\n"
-        "  raw      TEXT PRIMARY KEY,\n"
-        "  display  TEXT NOT NULL\n)"
-    )
-    for raw, display in spec.aliases.items():
-        con.execute("INSERT OR REPLACE INTO aliases VALUES (?, ?)", [raw, display])
+def _rows_to_table(rows: list[dict], schema: pa.Schema) -> pa.Table:
+    if not rows:
+        return pa.table({f.name: pa.array([], type=f.type) for f in schema}, schema=schema)
+    columns = {f.name: [row.get(f.name) for row in rows] for f in schema}
+    arrays = {name: pa.array(vals, type=schema.field(name).type) for name, vals in columns.items()}
+    return pa.table(arrays, schema=schema)
 
+
+# ═══════════════════════════════════════════════════════════════════
+#  Main export
+# ═══════════════════════════════════════════════════════════════════
 
 def export(
     captures_dir: Path,
-    db_path: Path,
+    out_dir: Path,
     spec: ExportSpec | None = None,
 ) -> None:
     spec = spec or DEFAULT_SPEC
@@ -298,37 +290,32 @@ def export(
         print(f"No session files found in {captures_dir}")
         return
 
-    con = duckdb.connect(str(db_path))
-    _create_tables(con, spec)
+    out_dir.mkdir(parents=True, exist_ok=True)
 
-    scan_count = 0
-    mat_count = 0
+    scan_rows: list[dict] = []
+    mat_rows: list[dict] = []
 
     for jf in json_files:
         with open(jf, "r", encoding="utf-8") as f:
             session = json.load(f)
 
         for capture in session.get("captures", []):
-            scan_row = _build_scan_row(session, capture, spec)
-            placeholders = ", ".join(["?"] * len(scan_row))
-            col_names = ", ".join(scan_row.keys())
-            con.execute(
-                f"INSERT OR REPLACE INTO scans ({col_names}) VALUES ({placeholders})",
-                list(scan_row.values()),
-            )
-            scan_count += 1
+            scan_rows.append(_build_scan_row(session, capture, spec))
+            mat_rows.extend(_build_material_rows(capture, spec))
 
-            for mat_row in _build_material_rows(capture, spec):
-                placeholders = ", ".join(["?"] * len(mat_row))
-                col_names = ", ".join(mat_row.keys())
-                con.execute(
-                    f"INSERT OR REPLACE INTO compositions ({col_names}) VALUES ({placeholders})",
-                    list(mat_row.values()),
-                )
-                mat_count += 1
+    scan_schema = _scan_schema(spec)
+    mat_schema  = _material_schema(spec)
 
-    con.close()
-    print(f"Exported {scan_count} scans, {mat_count} material rows → {db_path}")
+    scans_path = out_dir / "scans.parquet"
+    comps_path = out_dir / "compositions.parquet"
+
+    pq.write_table(_rows_to_table(scan_rows, scan_schema), scans_path, compression="snappy")
+    pq.write_table(_rows_to_table(mat_rows,  mat_schema),  comps_path, compression="snappy")
+
+    print(
+        f"Exported {len(scan_rows)} scans → {scans_path}\n"
+        f"Exported {len(mat_rows)} material rows → {comps_path}"
+    )
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -336,19 +323,19 @@ def export(
 # ═══════════════════════════════════════════════════════════════════
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Export session JSONs to DuckDB")
+    parser = argparse.ArgumentParser(description="Export session JSONs to Parquet")
     parser.add_argument(
         "--captures", type=Path,
         default=Path(__file__).parent.parent / "Rock Capture Database" / "captures",
         help="Directory containing session_*.json files",
     )
     parser.add_argument(
-        "--db", type=Path,
-        default=Path(__file__).parent.parent / "Rock Capture Database" / "scans.duckdb",
-        help="Output DuckDB file path",
+        "--out", type=Path,
+        default=Path(__file__).parent.parent / "Rock Capture Database",
+        help="Output directory for scans.parquet and compositions.parquet",
     )
     args = parser.parse_args()
-    export(args.captures, args.db)
+    export(args.captures, args.out)
 
 
 if __name__ == "__main__":

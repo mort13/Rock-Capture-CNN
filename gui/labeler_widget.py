@@ -95,6 +95,15 @@ class LabelerWidget(QGroupBox):
         dataset_row.addWidget(clear_btn)
         layout.addLayout(dataset_row)
 
+        # Feedback label for last action
+        self.feedback_label = QLabel("")
+        self.feedback_label.setStyleSheet(
+            "font-size: 12px; font-weight: bold; padding: 4px; "
+            "background-color: #444; color: #0f0; border-radius: 3px;"
+        )
+        self.feedback_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(self.feedback_label)
+
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
 
     def is_active(self) -> bool:
@@ -128,12 +137,27 @@ class LabelerWidget(QGroupBox):
         if label in valid_chars:
             self._save_current(label)
             self._queue.pop(0)
+            self.feedback_label.setText(f"Labeled as '{label}'")
+            self.feedback_label.setStyleSheet(
+                "font-size: 12px; font-weight: bold; padding: 4px; "
+                "background-color: #444; color: #0f0; border-radius: 3px;"
+            )
             self._show_next()
         elif event.key() == Qt.Key.Key_Space:
             self._queue.pop(0)
+            self.feedback_label.setText("Skipped")
+            self.feedback_label.setStyleSheet(
+                "font-size: 12px; font-weight: bold; padding: 4px; "
+                "background-color: #444; color: #ff0; border-radius: 3px;"
+            )
             self._show_next()
         elif event.key() == Qt.Key.Key_Backspace:
             self._undo_last()
+            self.feedback_label.setText("Undo last")
+            self.feedback_label.setStyleSheet(
+                "font-size: 12px; font-weight: bold; padding: 4px; "
+                "background-color: #444; color: #f80; border-radius: 3px;"
+            )
 
     def _save_current(self, label: str) -> None:
         if not self._queue:

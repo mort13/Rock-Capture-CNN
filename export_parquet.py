@@ -85,14 +85,14 @@ class ExportSpec:
 
 DEFAULT_SPEC = ExportSpec(
     scan_fields=[
-        Field("deposit",     "deposit",     "text",      confidence=True),
+        Field("deposit_name", "deposit",     "text",      confidence=True),
         Field("mass",        "mass",        "int",       confidence=True),
         Field("resistance",  "resistance",  "int",       confidence=True),
         Field("instability", "instability", "composite", confidence=True),
         Field("volume",      "volume",      "composite", confidence=True),
     ],
     material_fields=[
-        MaterialField("type",    "type",    "text"),
+        MaterialField("name",    "type",    "text"),
         MaterialField("amount",  "amount",  "composite"),
         MaterialField("quality", "quality", "int"),
     ],
@@ -196,13 +196,18 @@ def _material_min_confidence(mat: dict) -> float | None:
 
 def _build_scan_row(session: dict, capture: dict, spec: ExportSpec) -> dict:
     scan = capture.get("scan", {})
+    loc = capture.get("location") or {}
     row: dict[str, Any] = {
-        "session_id": session.get("session_id"),
-        "user":       session.get("source", {}).get("user"),
-        "org":        session.get("source", {}).get("org"),
-        "timestamp":  capture.get("timestamp"),
-        "capture_id": capture.get("capture_id"),
-        "cluster_id": capture.get("cluster_id"),
+        "session_id":   session.get("session_id"),
+        "user":         session.get("source", {}).get("user"),
+        "org":          session.get("source", {}).get("org"),
+        "timestamp":    capture.get("timestamp"),
+        "capture_id":   capture.get("capture_id"),
+        "cluster_id":   capture.get("cluster_id"),
+        "system":       loc.get("system"),
+        "gravity_well": loc.get("gravity_well"),
+        "region":       loc.get("region"),
+        "place":        loc.get("place"),
     }
     for f in spec.scan_fields:
         row[f.column] = _extract_value(scan, f)
@@ -216,6 +221,11 @@ def _build_material_rows(capture: dict, spec: ExportSpec) -> list[dict]:
     composition = scan.get("composition", [])
     rows = []
     for idx, mat in enumerate(composition):
+        # Skip rows where the material name is "none"
+        name_entry = mat.get("name")
+        if isinstance(name_entry, dict) and name_entry.get("value") == "none":
+            continue
+
         row: dict[str, Any] = {
             "capture_id": capture.get("capture_id"),
             "mat_index":  idx,
@@ -237,12 +247,16 @@ def _build_material_rows(capture: dict, spec: ExportSpec) -> list[dict]:
 
 def _scan_schema(spec: ExportSpec) -> pa.Schema:
     fields = [
-        pa.field("session_id", pa.string()),
-        pa.field("user",       pa.string()),
-        pa.field("org",        pa.string()),
-        pa.field("timestamp",  pa.string()),
-        pa.field("capture_id", pa.string()),
-        pa.field("cluster_id", pa.string()),
+        pa.field("session_id",   pa.string()),
+        pa.field("user",         pa.string()),
+        pa.field("org",          pa.string()),
+        pa.field("timestamp",    pa.string()),
+        pa.field("capture_id",   pa.string()),
+        pa.field("cluster_id",   pa.string()),
+        pa.field("system",       pa.string()),
+        pa.field("gravity_well", pa.string()),
+        pa.field("region",       pa.string()),
+        pa.field("place",        pa.string()),
     ]
     type_map = {"text": pa.string(), "int": pa.int64(),
                 "float": pa.float64(), "composite": pa.float64()}

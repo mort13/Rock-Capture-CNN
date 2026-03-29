@@ -14,6 +14,7 @@ from core.profile import FilterSettings
 from gui.filter_widget import FilterWidget
 from gui.roi_editor import ROIEditor
 from gui.labeler_widget import LabelerWidget
+from gui.word_labeler_widget import WordLabelerWidget
 
 
 class ControlsPanel(QWidget):
@@ -38,6 +39,7 @@ class ControlsPanel(QWidget):
     roi_selected_signal = pyqtSignal(int)
     rois_changed = pyqtSignal()
     labeler_toggled = pyqtSignal(bool)
+    word_labeler_toggled = pyqtSignal(bool)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -71,6 +73,13 @@ class ControlsPanel(QWidget):
             lambda state: self.labeler_toggled.emit(bool(state))
         )
         layout.addWidget(self.labeler_widget)
+
+        # 7. Word Labeler
+        self.word_labeler_widget = WordLabelerWidget()
+        self.word_labeler_widget.enable_cb.stateChanged.connect(
+            lambda state: self.word_labeler_toggled.emit(bool(state))
+        )
+        layout.addWidget(self.word_labeler_widget)
 
         layout.addStretch()
         scroll.setWidget(container)
@@ -193,7 +202,11 @@ class ControlsPanel(QWidget):
             else:
                 self._result_labels[key].setStyleSheet("font-size: 13px;")
 
-    def freeze_staged(self, staged_values: dict[str, str]) -> None:
+    def freeze_staged(
+        self,
+        staged_values: dict[str, str],
+        red_keys: set[str] = frozenset(),
+    ) -> None:
         """Replace result labels with editable fields frozen to staged values."""
         self._is_staged = True
         # Hide live labels
@@ -206,9 +219,14 @@ class ControlsPanel(QWidget):
             lbl = QLabel(f"{key}:")
             lbl.setStyleSheet("font-size: 13px; min-width: 100px;")
             edit = QLineEdit(value)
-            edit.setStyleSheet(
-                "font-size: 13px; background-color: #ffffcc; padding: 2px;"
-            )
+            if key in red_keys:
+                edit.setStyleSheet(
+                    "font-size: 13px; background-color: #ffaaaa; color: #000; padding: 2px;"
+                )
+            else:
+                edit.setStyleSheet(
+                    "font-size: 13px; background-color: #ffffcc; padding: 2px;"
+                )
             edit.setPlaceholderText("(empty = no value)")
             row.addWidget(lbl)
             row.addWidget(edit)

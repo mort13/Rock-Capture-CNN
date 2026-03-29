@@ -77,7 +77,7 @@
       "format_pattern": "",
       "dot_width": 0,
       "enabled": true,
-      "recognition_mode": "template",
+      "recognition_mode": "word_cnn",
       "template_dir": "templates/resources",
       "csv_index": 0
     },
@@ -103,7 +103,7 @@
       "format_pattern": "",
       "dot_width": 0,
       "enabled": true,
-      "recognition_mode": "template",
+      "recognition_mode": "word_cnn",
       "template_dir": "templates/resources",
       "csv_index": 0
     },
@@ -129,7 +129,7 @@
       "format_pattern": "",
       "dot_width": 0,
       "enabled": true,
-      "recognition_mode": "template",
+      "recognition_mode": "word_cnn",
       "template_dir": "templates/resources",
       "csv_index": 0
     },
@@ -233,7 +233,7 @@
       "format_pattern": "",
       "dot_width": 0,
       "enabled": true,
-      "recognition_mode": "template",
+      "recognition_mode": "word_cnn",
       "template_dir": "templates/resources",
       "csv_index": 0
     },
@@ -285,7 +285,7 @@
       "format_pattern": "",
       "dot_width": 0,
       "enabled": true,
-      "recognition_mode": "template",
+      "recognition_mode": "word_cnn",
       "template_dir": "templates/resources",
       "csv_index": 0
     },
@@ -311,7 +311,7 @@
       "format_pattern": "",
       "dot_width": 0,
       "enabled": true,
-      "recognition_mode": "template",
+      "recognition_mode": "word_cnn",
       "template_dir": "templates/resources",
       "csv_index": 0
     },

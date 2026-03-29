@@ -25,6 +25,7 @@ _MODE_VALUES = [value for _, value in _SEG_MODES]
 _RECOG_MODES = [
     ("CNN (digits/chars)", "cnn"),
     ("Template matching (words)", "template"),
+    ("Word CNN (names)", "word_cnn"),
 ]
 _RECOG_LABELS = [label for label, _ in _RECOG_MODES]
 _RECOG_VALUES = [value for _, value in _RECOG_MODES]

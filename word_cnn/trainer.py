@@ -1,0 +1,156 @@
+"""
+Training thread for the word-classification CNN.
+Mirrors cnn.trainer but uses WordCNN + WordDataset.
+"""
+
+import torch
+import torch.nn as nn
+import torch.optim as optim
+from torch.utils.data import DataLoader, random_split
+from PyQt6.QtCore import QThread, pyqtSignal
+from pathlib import Path
+
+from word_cnn.model import WordCNN
+from word_cnn.dataset import WordDataset
+
+
+class WordTrainerThread(QThread):
+    """
+    Trains a WordCNN in a background thread.
+
+    Signals:
+        epoch_completed(int, float, float): (epoch, train_loss, val_accuracy)
+        training_finished(str): path to saved model
+        training_failed(str): error message
+        progress_update(str): status text
+    """
+    epoch_completed = pyqtSignal(int, float, float)
+    training_finished = pyqtSignal(str)
+    training_failed = pyqtSignal(str)
+    progress_update = pyqtSignal(str)
+
+    def __init__(
+        self,
+        data_dir: str | Path,
+        output_model_path: str | Path,
+        word_classes: list[str] | None = None,
+        num_epochs: int = 60,
+        batch_size: int = 32,
+        learning_rate: float = 0.001,
+        val_split: float = 0.2,
+        parent=None,
+    ):
+        super().__init__(parent)
+        self.data_dir = Path(data_dir)
+        self.output_path = Path(output_model_path)
+        self.word_classes = word_classes
+        self.num_epochs = num_epochs
+        self.batch_size = batch_size
+        self.learning_rate = learning_rate
+        self.val_split = val_split
+        self._stop_requested = False
+
+    def request_stop(self) -> None:
+        self._stop_requested = True
+
+    def run(self) -> None:
+        try:
+            self.progress_update.emit("Loading dataset...")
+            # Load without augmentation first to discover classes + count
+            raw_dataset = WordDataset(self.data_dir, self.word_classes)
+
+            n_real = raw_dataset.base_len
+            if n_real < 2:
+                self.training_failed.emit(
+                    f"Not enough samples ({n_real}). Need at least 2."
+                )
+                return
+
+            word_classes = raw_dataset.word_classes
+            num_classes = len(word_classes)
+            if num_classes < 2:
+                self.training_failed.emit(
+                    f"Need at least 2 classes, found {num_classes}."
+                )
+                return
+
+            # Compute oversample factor so that effective dataset has
+            # at least ~200 samples per epoch even from a handful of images
+            oversample = max(1, 200 // n_real)
+
+            # Build train set (augmented + oversampled) and val set (clean)
+            train_ds = WordDataset(
+                self.data_dir, word_classes, augment=True, oversample=oversample
+            )
+            val_ds = WordDataset(
+                self.data_dir, word_classes, augment=False, oversample=1
+            )
+
+            train_loader = DataLoader(
+                train_ds, batch_size=self.batch_size, shuffle=True
+            )
+            val_loader = DataLoader(
+                val_ds, batch_size=self.batch_size, shuffle=False
+            )
+
+            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+            model = WordCNN(num_classes=num_classes).to(device)
+            criterion = nn.CrossEntropyLoss()
+            optimizer = optim.Adam(model.parameters(), lr=self.learning_rate)
+
+            self.progress_update.emit(
+                f"Training on {n_real} images (×{oversample} oversample, augmented), "
+                f"validating on {n_real} clean ({num_classes} classes, device: {device})..."
+            )
+
+            best_val_acc = 0.0
+            for epoch in range(self.num_epochs):
+                if self._stop_requested:
+                    self.progress_update.emit("Training stopped by user.")
+                    break
+
+                model.train()
+                total_loss = 0.0
+                for images, labels in train_loader:
+                    images = images.to(device)
+                    labels = labels.to(device)
+                    optimizer.zero_grad()
+                    outputs = model(images)
+                    loss = criterion(outputs, labels)
+                    loss.backward()
+                    optimizer.step()
+                    total_loss += loss.item()
+                avg_loss = total_loss / len(train_loader)
+
+                model.eval()
+                correct = 0
+                total = 0
+                with torch.no_grad():
+                    for images, labels in val_loader:
+                        images = images.to(device)
+                        labels = labels.to(device)
+                        outputs = model(images)
+                        _, predicted = torch.max(outputs, 1)
+                        total += labels.size(0)
+                        correct += (predicted == labels).sum().item()
+                val_acc = correct / total if total > 0 else 0.0
+
+                self.epoch_completed.emit(epoch + 1, avg_loss, val_acc)
+
+                if val_acc > best_val_acc:
+                    best_val_acc = val_acc
+                    self.output_path.parent.mkdir(parents=True, exist_ok=True)
+                    torch.save(
+                        {
+                            "model_state_dict": model.state_dict(),
+                            "word_classes": word_classes,
+                            "num_classes": num_classes,
+                            "val_accuracy": val_acc,
+                        },
+                        str(self.output_path),
+                    )
+
+            self.training_finished.emit(str(self.output_path))
+
+        except Exception as e:
+            self.training_failed.emit(str(e))

@@ -16,6 +16,7 @@ from core.segmenter import CharacterSegmenter, SegmentedChar
 from core.profile import Profile, ROIDefinition
 from core.template_matcher import WordTemplateMatcher
 from cnn.predictor import Predictor
+from word_cnn.predictor import WordPredictor
 
 
 @dataclass
@@ -27,6 +28,8 @@ class ROIResult:
     characters: list[SegmentedChar] = field(default_factory=list)
     recognized_text: str = ""
     confidence: float = 0.0
+    word_scores: list[tuple[str, float]] = field(default_factory=list)
+    recognition_mode: str = ""
 
 
 @dataclass
@@ -50,7 +53,9 @@ class RecognitionPipeline(QObject):
     frame_processed = pyqtSignal(object)
     anchor_lost = pyqtSignal()
 
-    def __init__(self, parent=None, predictor: Predictor | None = None, profile_name: str = ""):
+    def __init__(self, parent=None, predictor: Predictor | None = None,
+                 word_predictor: WordPredictor | None = None,
+                 profile_name: str = ""):
         super().__init__(parent)
         self.capture_engine = CaptureEngine(self)
         self.anchor_matcher = AnchorMatcher()
@@ -62,6 +67,8 @@ class RecognitionPipeline(QObject):
         else:
             self.predictor = Predictor()
             self._owns_predictor = True
+
+        self.word_predictor = word_predictor or WordPredictor()
 
         self._profile: Profile | None = None
         self._profile_name: str = profile_name
@@ -172,6 +179,30 @@ class RecognitionPipeline(QObject):
                         characters=[],
                         recognized_text=text,
                         confidence=conf,
+                        recognition_mode="template",
+                    )
+                )
+                continue
+
+            # ── Word CNN mode ──────────────────────────────────────
+            if roi_def.recognition_mode == "word_cnn":
+                if self.word_predictor.is_loaded:
+                    word_scores = self.word_predictor.predict_all(raw_roi)
+                    text, conf = word_scores[0] if word_scores else ("?", 0.0)
+                else:
+                    word_scores = []
+                    text = "?"
+                    conf = 0.0
+                roi_results.append(
+                    ROIResult(
+                        name=roi_def.name,
+                        raw_image=raw_roi,
+                        filtered_image=filtered_roi,
+                        characters=[],
+                        recognized_text=text,
+                        confidence=conf,
+                        word_scores=word_scores,
+                        recognition_mode="word_cnn",
                     )
                 )
                 continue

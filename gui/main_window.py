@@ -22,6 +22,9 @@ from core.profile import Profile, HUDProfile, SchemaNode, ROIRef
 from core.pipeline import RecognitionPipeline, FrameResult
 from cnn.predictor import Predictor
 from cnn.trainer import TrainerThread
+from word_cnn.predictor import WordPredictor
+from word_cnn.trainer import WordTrainerThread
+from word_cnn.seed import seed_from_templates
 from gui.preview_widget import PreviewWidget
 from gui.controls_panel import ControlsPanel
 from gui.region_selector import ScreenCaptureOverlay
@@ -41,6 +44,7 @@ class MainWindow(QMainWindow):
         self._base_dir = Path(__file__).resolve().parent.parent
         self._hud_profiles_dir = self._base_dir / "data" / "hud_profiles"
         self._predictor = Predictor()
+        self._word_predictor = WordPredictor()
         self._pipelines: dict[str, RecognitionPipeline] = {}
         self._profiles: dict[str, Profile] = {}
         self._editing_profile_name: str | None = None
@@ -59,6 +63,7 @@ class MainWindow(QMainWindow):
         self._session_captures: list[dict] = []
         self._session_file: Path | None = None
         self._model_path: str = ""
+        self._word_model_path: str = ""
         self._active_output_schema: list[SchemaNode] = []
         self._active_hud_name: str = ""
 
@@ -162,6 +167,31 @@ class MainWindow(QMainWindow):
         self.train_model_btn = QPushButton("Train")
         self.train_model_btn.clicked.connect(self._on_train)
         toolbar.addWidget(self.train_model_btn)
+
+        toolbar.addSeparator()
+
+        toolbar.addWidget(QLabel(" Word Model: "))
+        self.word_model_status_label = QLabel("No word model")
+        self.word_model_status_label.setStyleSheet("color: gray;")
+        self.word_model_status_label.setMinimumWidth(120)
+        toolbar.addWidget(self.word_model_status_label)
+
+        self.load_word_model_btn = QPushButton("Load Word Model...")
+        self.load_word_model_btn.clicked.connect(self._on_load_word_model)
+        toolbar.addWidget(self.load_word_model_btn)
+
+        self.seed_templates_btn = QPushButton("Seed Templates")
+        self.seed_templates_btn.clicked.connect(self._on_seed_templates)
+        toolbar.addWidget(self.seed_templates_btn)
+
+        self.train_word_model_btn = QPushButton("Train Words")
+        self.train_word_model_btn.clicked.connect(self._on_train_words)
+        toolbar.addWidget(self.train_word_model_btn)
+
+        self.debug_word_btn = QPushButton("Debug ROI: OFF")
+        self.debug_word_btn.setCheckable(True)
+        self.debug_word_btn.clicked.connect(self._on_debug_word_toggle)
+        toolbar.addWidget(self.debug_word_btn)
 
         toolbar.addSeparator()
 
@@ -450,6 +480,7 @@ class MainWindow(QMainWindow):
         self.controls_panel.filters_changed.connect(self._on_filters_changed)
         self.controls_panel.rois_changed.connect(self._on_rois_changed)
         self.controls_panel.labeler_toggled.connect(self._on_labeler_toggle)
+        self.controls_panel.word_labeler_toggled.connect(self._on_word_labeler_toggle)
 
     # ── Frame Processing ─────────────────────────────────────────
 
@@ -484,6 +515,14 @@ class MainWindow(QMainWindow):
                     roi_result.characters, roi_result.name
                 )
 
+        if self.controls_panel.word_labeler_widget.is_active():
+            for roi_result in result.roi_results:
+                # Only queue ROIs that use template or word_cnn mode
+                if not roi_result.characters and roi_result.raw_image is not None:
+                    self.controls_panel.word_labeler_widget.queue_image(
+                        roi_result.raw_image, roi_result.name
+                    )
+
     def _on_anchor_lost(self, profile_name: str) -> None:
         self._last_frame_results.pop(profile_name, None)
         if profile_name == self._editing_profile_name:
@@ -517,13 +556,22 @@ class MainWindow(QMainWindow):
                     self._update_model_status()
                     break
 
+        # Auto-load word model
+        if not self._word_predictor.is_loaded:
+            word_model_path = self._base_dir / "data" / "models" / "word_model.pth"
+            if word_model_path.exists():
+                if self._word_predictor.load_model(str(word_model_path)):
+                    self._word_model_path = word_model_path.name
+                    self._update_word_model_status()
+
         self._refresh_profile_combo(names)
         self._refresh_hud_profile_combo()
 
     def _create_pipeline_for(self, name: str, profile: Profile) -> None:
         """Create and wire a RecognitionPipeline for a single profile."""
         pipeline = RecognitionPipeline(
-            parent=self, predictor=self._predictor, profile_name=name,
+            parent=self, predictor=self._predictor,
+            word_predictor=self._word_predictor, profile_name=name,
         )
         pipeline.load_profile(profile, self._base_dir)
         pipeline.frame_processed.connect(self._on_frame_result)
@@ -884,6 +932,109 @@ class MainWindow(QMainWindow):
             else:
                 QMessageBox.warning(self, "Load Failed", "Failed to load model.")
 
+    # ── Word CNN ─────────────────────────────────────────────────
+
+    def _update_word_model_status(self) -> None:
+        if self._word_predictor.is_loaded:
+            classes = self._word_predictor.word_classes
+            self.word_model_status_label.setText(
+                f"{self._word_model_path} ({len(classes)} classes)"
+            )
+            self.word_model_status_label.setStyleSheet("color: green;")
+        else:
+            self.word_model_status_label.setText("No word model")
+            self.word_model_status_label.setStyleSheet("color: gray;")
+
+    def _on_debug_word_toggle(self, checked: bool) -> None:
+        debug_dir = self._base_dir / "debug_word_rois" if checked else None
+        self._word_predictor.debug_dir = debug_dir
+        self.debug_word_btn.setText(f"Debug ROI: {'ON' if checked else 'OFF'}")
+        if checked:
+            self._word_predictor._debug_counter = 0
+            QMessageBox.information(
+                self, "Debug ON",
+                f"Live ROI images will be saved to:\n{debug_dir}\n\n"
+                "Each frame saves the preprocessed canvas so you can compare\n"
+                "with debug_preprocessed/ (training inputs).\n\n"
+                "Click again to stop.",
+            )
+
+    def _on_seed_templates(self) -> None:
+        """Copy template images into word_training_data class folders."""
+        template_dirs = [
+            self._base_dir / "data" / "templates" / "resources",
+            self._base_dir / "data" / "templates" / "deposits",
+        ]
+        output_dir = self._base_dir / "data" / "word_training_data"
+        counts = seed_from_templates(template_dirs, output_dir)
+        if counts:
+            summary = ", ".join(f"{k}: {v}" for k, v in sorted(counts.items()))
+            QMessageBox.information(
+                self, "Seed Complete",
+                f"Copied templates into word_training_data/\n\n"
+                f"{len(counts)} classes: {summary}",
+            )
+            # Refresh word labeler counts if visible
+            if self.controls_panel.word_labeler_widget.isVisible():
+                self.controls_panel.word_labeler_widget.refresh_counts()
+        else:
+            QMessageBox.warning(
+                self, "No Templates",
+                "No template images found in data/templates/.",
+            )
+
+    def _on_train_words(self) -> None:
+        data_dir = self._base_dir / "data" / "word_training_data"
+        if not data_dir.exists() or not any(
+            d.is_dir() and (
+                any(d.glob("*.png")) or any(d.glob("*.jpg"))
+            )
+            for d in data_dir.iterdir()
+        ):
+            QMessageBox.warning(
+                self, "No Data",
+                "No word training data found.\n\n"
+                "Click 'Seed Templates' to populate from template images,\n"
+                "or use the Word Labeler to collect samples manually.\n"
+                "Data is stored in data/word_training_data/<label>/",
+            )
+            return
+
+        models_dir = self._base_dir / "data" / "models"
+        models_dir.mkdir(parents=True, exist_ok=True)
+        model_name = "word_model.pth"
+        model_path = models_dir / model_name
+
+        existing_classes = (
+            self._word_predictor.word_classes
+            if self._word_predictor.is_loaded else None
+        )
+        trainer = WordTrainerThread(
+            data_dir=str(data_dir),
+            output_model_path=str(model_path),
+            word_classes=existing_classes,
+            parent=self,
+        )
+
+        dialog = TrainingDialog(trainer, self)
+        if dialog.exec():
+            if self._word_predictor.load_model(str(model_path)):
+                self._word_model_path = model_name
+                self._update_word_model_status()
+
+    def _on_load_word_model(self) -> None:
+        models_dir = self._base_dir / "data" / "models"
+        models_dir.mkdir(parents=True, exist_ok=True)
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Load Word CNN Model", str(models_dir), "PyTorch Models (*.pth)"
+        )
+        if path:
+            if self._word_predictor.load_model(path):
+                self._word_model_path = Path(path).name
+                self._update_word_model_status()
+            else:
+                QMessageBox.warning(self, "Load Failed", "Failed to load word model.")
+
     # ── Labeler ──────────────────────────────────────────────────
 
     def _on_labeler_toggle(self, active: bool) -> None:
@@ -893,6 +1044,21 @@ class MainWindow(QMainWindow):
         self.controls_panel.labeler_widget.set_data_dir(data_dir)
         if active:
             self.controls_panel.labeler_widget.refresh_counts()
+
+    def _on_word_labeler_toggle(self, active: bool) -> None:
+        data_dir = self._base_dir / "data" / "word_training_data"
+        self.controls_panel.word_labeler_widget.set_data_dir(data_dir)
+        if active:
+            # Pre-populate combo with existing template names
+            templates_dir = self._base_dir / "data" / "templates" / "resources"
+            if templates_dir.exists():
+                for img in sorted(templates_dir.glob("*")):
+                    if img.is_file():
+                        name = img.stem
+                        combo = self.controls_panel.word_labeler_widget.label_combo
+                        if combo.findText(name) < 0:
+                            combo.addItem(name)
+            self.controls_panel.word_labeler_widget.refresh_counts()
 
     # ── Monitor ──────────────────────────────────────────────────
 
@@ -923,6 +1089,80 @@ class MainWindow(QMainWindow):
                 QTimer.singleShot(0, self._on_commit_to_json)
         except Exception:
             pass
+
+    def _compute_amount_red_keys(self, flat_values: dict[str, str]) -> set[str]:
+        """Return flat keys for amount fields when named-material percentages don't sum to ~100."""
+        named_keys: list[tuple[str, str]] = []
+        total = 0.0
+
+        if any(k.startswith("scan/composition") for k in flat_values):
+            # Structured output-schema format: scan/composition[N]/name, amount_int, amount_dec
+            for i in range(6):
+                name = flat_values.get(f"scan/composition[{i}]/name", "").strip()
+                if not name:
+                    continue
+                int_key = f"scan/composition[{i}]/amount_int"
+                dec_key = f"scan/composition[{i}]/amount_dec"
+                int_str = flat_values.get(int_key, "") or "0"
+                dec_str = flat_values.get(dec_key, "") or "0"
+                try:
+                    total += float(f"{int_str}.{dec_str}")
+                    named_keys.append((int_key, dec_key))
+                except ValueError:
+                    pass
+        else:
+            # Legacy flat format: values/volume/matNname, values/materialN/int, etc.
+            for n in range(1, 7):
+                name = flat_values.get(f"values/volume/mat{n}name", "").strip()
+                if not name:
+                    continue
+                int_key = f"values/material{n}/int"
+                dec_key = f"values/material{n}/decimal"
+                int_str = flat_values.get(int_key, "") or "0"
+                dec_str = flat_values.get(dec_key, "") or "0"
+                try:
+                    total += float(f"{int_str}.{dec_str}")
+                    named_keys.append((int_key, dec_key))
+                except ValueError:
+                    pass
+
+        if named_keys and abs(total - 100.0) > 1.0:
+            return {k for pair in named_keys for k in pair}
+        return set()
+
+    def _compute_deposit_red_keys(self, flat_values: dict[str, str]) -> set[str]:
+        """Return the deposit-name flat key when deposit changed but cluster ID is the same."""
+        if not self._session_captures:
+            return set()
+
+        # Current deposit name from flat staged values
+        if "scan/deposit_name" in flat_values:
+            current_deposit = flat_values.get("scan/deposit_name", "").strip()
+            deposit_key = "scan/deposit_name"
+        else:
+            current_deposit = flat_values.get("values/deposit_name/name", "").strip()
+            deposit_key = "values/deposit_name/name"
+
+        if not current_deposit:
+            return set()
+
+        # Last committed capture's deposit name
+        last = self._session_captures[-1]
+        if last.get("cluster_id") != self._cluster_id:
+            return set()
+
+        # Extract deposit name from the nested capture structure
+        scan = last.get("scan") or last.get("values", {}).get("deposit_name", {})
+        if "deposit_name" in last.get("scan", {}):
+            last_deposit = (last["scan"]["deposit_name"] or {}).get("value", "") or ""
+        elif "deposit_name" in last.get("values", {}):
+            last_deposit = (last["values"]["deposit_name"].get("name") or {}).get("value", "") or ""
+        else:
+            return set()
+
+        if last_deposit.strip() and last_deposit.strip() != current_deposit:
+            return {deposit_key}
+        return set()
 
     def _collect_flat_staged_values(self) -> dict[str, str]:
         """Collect a flat key->value dict from staged data for display in edit fields."""
@@ -990,6 +1230,13 @@ class MainWindow(QMainWindow):
                     _set_value(self._staged_data[top_key], tokens[1:], value)
 
     def _on_stage_pressed(self) -> None:
+        # F9 again while staged → cancel and return to live preview
+        if self._staged_data is not None:
+            self._staged_data = None
+            self.controls_panel.unfreeze_staged()
+            self.statusBar().showMessage("Unstaged — back to live preview")
+            return
+
         if not self._last_frame_results:
             self.statusBar().showMessage("Nothing to stage — no frame captured yet")
             return
@@ -1064,11 +1311,21 @@ class MainWindow(QMainWindow):
 
         # Freeze the controls panel to show editable staged values
         flat_values = self._collect_flat_staged_values()
-        self.controls_panel.freeze_staged(flat_values)
-
-        self.statusBar().showMessage(
-            f"Staged {len(flat_values)} values — edit if needed, then F10 to commit"
+        red_keys = (
+            self._compute_amount_red_keys(flat_values)
+            | self._compute_deposit_red_keys(flat_values)
         )
+        self.controls_panel.freeze_staged(flat_values, red_keys=red_keys)
+
+        warnings = []
+        if self._compute_amount_red_keys(flat_values):
+            warnings.append("amounts ≠ 100%")
+        if self._compute_deposit_red_keys(flat_values):
+            warnings.append("deposit name changed in same cluster")
+        status = f"Staged {len(flat_values)} values — edit if needed, then F10 to commit"
+        if warnings:
+            status += "  ⚠ " + "; ".join(warnings)
+        self.statusBar().showMessage(status)
 
     def _parse_location(self) -> dict:
         """Parse the location string into the structured JSON format."""

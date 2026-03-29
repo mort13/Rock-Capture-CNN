@@ -5,8 +5,8 @@
   "rois": [
     {
       "name": "int",
-      "x_offset": -23,
-      "y_offset": -11,
+      "x_offset": -24,
+      "y_offset": -5,
       "width": 24,
       "height": 18,
       "filters": {
@@ -31,8 +31,8 @@
     },
     {
       "name": "decimal",
-      "x_offset": 4,
-      "y_offset": -11,
+      "x_offset": 3,
+      "y_offset": -5,
       "width": 19,
       "height": 18,
       "filters": {

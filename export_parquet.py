@@ -219,11 +219,16 @@ def _build_scan_row(session: dict, capture: dict, spec: ExportSpec) -> dict:
 def _build_material_rows(capture: dict, spec: ExportSpec) -> list[dict]:
     scan = capture.get("scan", {})
     composition = scan.get("composition", [])
+    
+    # Extract scan volume for material volume calculation
+    scan_volume = _extract_value(scan, Field("volume", "volume", "composite"))
+    
     rows = []
     for idx, mat in enumerate(composition):
-        # Skip rows where the material name is "none"
+        # Skip rows where the material name is missing, null, empty, "none", or "?"
         name_entry = mat.get("name")
-        if isinstance(name_entry, dict) and name_entry.get("value") == "none":
+        name_value = name_entry.get("value") if isinstance(name_entry, dict) else None
+        if not name_value or name_value in ("none", "?"):
             continue
 
         row: dict[str, Any] = {
@@ -235,6 +240,19 @@ def _build_material_rows(capture: dict, spec: ExportSpec) -> list[dict]:
             if mf.kind == "text" and isinstance(val, str):
                 val = spec.aliases.get(val, val)
             row[mf.column] = val
+        
+        # Calculate material volume from percentage and scan volume
+        if scan_volume is not None:
+            material_amount = _extract_material_value(mat, MaterialField("amount", "amount", "composite"))
+            if material_amount is not None:
+                # Assume amount is a percentage (0-100), calculate actual volume
+                material_volume = (material_amount / 100.0) * scan_volume
+                row["material_volume"] = material_volume
+            else:
+                row["material_volume"] = None
+        else:
+            row["material_volume"] = None
+        
         if spec.material_min_confidence:
             row["min_confidence"] = _material_min_confidence(mat)
         rows.append(row)
@@ -276,6 +294,8 @@ def _material_schema(spec: ExportSpec) -> pa.Schema:
                 "float": pa.float64(), "composite": pa.float64()}
     for mf in spec.material_fields:
         fields.append(pa.field(mf.column, type_map[mf.kind]))
+    # Add calculated material volume field
+    fields.append(pa.field("material_volume", pa.float64()))
     if spec.material_min_confidence:
         fields.append(pa.field("min_confidence", pa.float64()))
     return pa.schema(fields)

@@ -4,6 +4,7 @@ Check that material amounts per scan sum to roughly 100%.
 Usage:
     python check_amounts.py
     python check_amounts.py --captures path/to/captures --tolerance 2.0
+    python check_amounts.py --remove
 """
 
 from __future__ import annotations
@@ -26,7 +27,7 @@ def _amount(mat: dict) -> float | None:
         return None
 
 
-def check(captures_dir: Path, tolerance: float = 3.0) -> None:
+def check(captures_dir: Path, tolerance: float = 3.0, remove: bool = False) -> None:
     json_files = sorted(captures_dir.glob("session_*.json"))
     if not json_files:
         print(f"No session files found in {captures_dir}")
@@ -34,26 +35,33 @@ def check(captures_dir: Path, tolerance: float = 3.0) -> None:
 
     total_captures = 0
     bad_captures = 0
+    removed_captures = 0
 
     for jf in json_files:
         with open(jf, encoding="utf-8") as f:
             session = json.load(f)
 
+        captures_to_keep = []
         for capture in session.get("captures", []):
             total_captures += 1
             scan = capture.get("scan", {})
             composition = scan.get("composition", [])
 
+            def _has_name(mat: dict) -> bool:
+                name_entry = mat.get("name")
+                name_value = name_entry.get("value") if isinstance(name_entry, dict) else None
+                return bool(name_value) and name_value not in ("none", "?")
+
             amounts = []
             for mat in composition:
-                name_entry = mat.get("name")
-                if isinstance(name_entry, dict) and name_entry.get("value") == "none":
+                if not _has_name(mat):
                     continue
                 a = _amount(mat)
                 if a is not None:
                     amounts.append(a)
 
             if not amounts:
+                captures_to_keep.append(capture)
                 continue
 
             total = sum(amounts)
@@ -67,14 +75,27 @@ def check(captures_dir: Path, tolerance: float = 3.0) -> None:
                 mat_list = ", ".join(
                     _fmt(mat)
                     for mat in composition
-                    if not (isinstance(mat.get("name"), dict) and mat["name"].get("value") == "none")
+                    if _has_name(mat)
                 )
                 print(f"  [{jf.name}] capture {capture_id}: missing={100-total:.2f}%  ({mat_list})")
+                if remove:
+                    removed_captures += 1
+                else:
+                    captures_to_keep.append(capture)
+            else:
+                captures_to_keep.append(capture)
+
+        if remove and len(captures_to_keep) < len(session.get("captures", [])):
+            session["captures"] = captures_to_keep
+            with open(jf, "w", encoding="utf-8") as f:
+                json.dump(session, f, indent=2)
 
     print(
         f"\n{bad_captures} / {total_captures} captures have amounts outside "
         f"100 ± {tolerance}%"
     )
+    if remove and removed_captures > 0:
+        print(f"Removed {removed_captures} captures with invalid amounts.")
 
 
 def main() -> None:
@@ -88,8 +109,12 @@ def main() -> None:
         "--tolerance", type=float, default=3.0,
         help="Allowed deviation from 100%% (default: 3.0)",
     )
+    parser.add_argument(
+        "--remove", action="store_true",
+        help="Remove captures with amounts outside tolerance",
+    )
     args = parser.parse_args()
-    check(args.captures, args.tolerance)
+    check(args.captures, args.tolerance, args.remove)
 
 
 if __name__ == "__main__":

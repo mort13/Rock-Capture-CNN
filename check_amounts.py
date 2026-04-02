@@ -27,7 +27,7 @@ def _amount(mat: dict) -> float | None:
         return None
 
 
-def check(captures_dir: Path, tolerance: float = 3.0, remove: bool = False) -> None:
+def check(captures_dir: Path, tolerance: float = 0.1, remove: bool = False) -> None:
     json_files = sorted(captures_dir.glob("session_*.json"))
     if not json_files:
         print(f"No session files found in {captures_dir}")
@@ -106,8 +106,8 @@ def main() -> None:
         help="Directory containing session_*.json files",
     )
     parser.add_argument(
-        "--tolerance", type=float, default=3.0,
-        help="Allowed deviation from 100%% (default: 3.0)",
+        "--tolerance", type=float, default=0.1,
+        help="Allowed deviation from 100%% (default: 0.1)",
     )
     parser.add_argument(
         "--remove", action="store_true",

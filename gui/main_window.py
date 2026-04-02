@@ -66,6 +66,7 @@ class MainWindow(QMainWindow):
         self._word_model_path: str = ""
         self._active_output_schema: list[SchemaNode] = []
         self._active_hud_name: str = ""
+        self._tolerance_percentage: float = 0.1
 
         self._init_capture_toolbar()
         self.addToolBarBreak(Qt.ToolBarArea.TopToolBarArea)
@@ -892,11 +893,17 @@ class MainWindow(QMainWindow):
             self.model_status_label.setStyleSheet("color: gray;")
 
     def _on_train(self) -> None:
-        data_dir = self._base_dir / "data" / "training_data"
+        default_dir = self._base_dir / "data" / "training_data"
+        chosen = QFileDialog.getExistingDirectory(
+            self, "Select Training Data Directory", str(default_dir)
+        )
+        if not chosen:
+            return
+        data_dir = Path(chosen)
         if not data_dir.exists() or not any(data_dir.iterdir()):
             QMessageBox.warning(
                 self, "No Data",
-                "No training data found. Use the labeler to collect samples first."
+                f"No training data found in:\n{data_dir}\n\nUse the labeler to collect samples first."
             )
             return
 
@@ -1126,7 +1133,7 @@ class MainWindow(QMainWindow):
                 except ValueError:
                     pass
 
-        if named_keys and abs(total - 100.0) > 1.0:
+        if named_keys and abs(total - 100.0) > self._tolerance_percentage:
             return {k for pair in named_keys for k in pair}
         return set()
 

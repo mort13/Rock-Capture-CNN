@@ -1195,11 +1195,17 @@ class MainWindow(QMainWindow):
         return flat
 
     def _apply_edits_to_staged(self, edits: dict[str, str]) -> None:
-        """Write edited values back into self._staged_data."""
+        """Write edited values back into self._staged_data.
+
+        Values that differ from the original are considered manually entered and
+        have their confidence set to None so they can be identified as such.
+        """
         if not self._staged_data:
             return
 
-        def _set_value(obj, path_parts: list[str], value: str):
+        original = self._collect_flat_staged_values()
+
+        def _set_value(obj, path_parts: list[str], value: str, manual: bool):
             if len(path_parts) == 0:
                 return
             key = path_parts[0]
@@ -1210,22 +1216,25 @@ class MainWindow(QMainWindow):
                     if len(path_parts) == 1:
                         if isinstance(obj[idx], dict) and "value" in obj[idx]:
                             obj[idx]["value"] = value if value else None
+                            if manual:
+                                obj[idx]["confidence"] = None
                     else:
-                        _set_value(obj[idx], path_parts[1:], value)
+                        _set_value(obj[idx], path_parts[1:], value, manual)
             elif isinstance(obj, dict):
                 if key in obj:
                     if len(path_parts) == 1:
                         if isinstance(obj[key], dict) and "value" in obj[key]:
                             obj[key]["value"] = value if value else None
+                            if manual:
+                                obj[key]["confidence"] = None
                     else:
-                        _set_value(obj[key], path_parts[1:], value)
+                        _set_value(obj[key], path_parts[1:], value, manual)
 
         for flat_key, value in edits.items():
-            # Split path: "compositions/[0]/material" -> ["compositions", "[0]", "material"]
-            tokens = []
-            for p in flat_key.replace("/", "\x00").split("\x00"):
-                if p:
-                    tokens.append(p)
+            manual = value != original.get(flat_key, value)
+            # Split path: "compositions[0]/material" -> ["compositions", "[0]", "material"]
+            # Replace "[" with "/[" first so array indices become their own segments.
+            tokens = [t for t in flat_key.replace("[", "/[").split("/") if t]
             if not tokens:
                 continue
             top_key = tokens[0]
@@ -1233,8 +1242,10 @@ class MainWindow(QMainWindow):
                 if len(tokens) == 1:
                     if isinstance(self._staged_data[top_key], dict) and "value" in self._staged_data[top_key]:
                         self._staged_data[top_key]["value"] = value if value else None
+                        if manual:
+                            self._staged_data[top_key]["confidence"] = None
                 else:
-                    _set_value(self._staged_data[top_key], tokens[1:], value)
+                    _set_value(self._staged_data[top_key], tokens[1:], value, manual)
 
     def _on_stage_pressed(self) -> None:
         # F9 again while staged → cancel and return to live preview

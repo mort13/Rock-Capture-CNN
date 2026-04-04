@@ -140,18 +140,20 @@ def _extract_value(scan: dict, f: Field) -> Any:
     return raw
 
 
-def _extract_confidence(scan: dict, f: Field) -> float | None:
+def _extract_confidence(scan: dict, f: Field) -> float:
     if f.kind == "composite":
         confs = []
         for suffix in ("_int", "_dec"):
             e = _get_entry(scan, f"{f.source}{suffix}")
             if e and "confidence" in e:
-                confs.append(e["confidence"])
-        return min(confs) if confs else None
+                conf = e["confidence"]
+                confs.append(conf if conf is not None else 1.0)
+        return min(confs) if confs else 1.0
     entry = _get_entry(scan, f.source)
     if entry and "confidence" in entry:
-        return entry["confidence"]
-    return None
+        conf = entry["confidence"]
+        return conf if conf is not None else 1.0
+    return 1.0
 
 
 def _extract_material_value(mat: dict, mf: MaterialField) -> Any:
@@ -181,13 +183,13 @@ def _extract_material_value(mat: dict, mf: MaterialField) -> Any:
     return raw
 
 
-def _material_min_confidence(mat: dict) -> float | None:
+def _material_min_confidence(mat: dict) -> float:
     confs = [
-        v["confidence"]
+        v["confidence"] if v["confidence"] is not None else 1.0
         for v in mat.values()
         if isinstance(v, dict) and "confidence" in v
     ]
-    return min(confs) if confs else None
+    return min(confs) if confs else 1.0
 
 
 # ═══════════════════════════════════════════════════════════════════

@@ -150,6 +150,7 @@ class ControlsPanel(QWidget):
         # Staged editable fields (key -> QLineEdit)
         self._staged_edits: dict[str, QLineEdit] = {}
         self._is_staged = False
+        self._validation_callback = None
         return group
 
     def _on_anchor_thresh_changed(self) -> None:
@@ -206,9 +207,17 @@ class ControlsPanel(QWidget):
         self,
         staged_values: dict[str, str],
         red_keys: set[str] = frozenset(),
+        validation_callback=None,
     ) -> None:
-        """Replace result labels with editable fields frozen to staged values."""
+        """Replace result labels with editable fields frozen to staged values.
+        
+        Args:
+            staged_values: Dict of field keys to initial values
+            red_keys: Set of keys that should be highlighted red
+            validation_callback: Callable that takes current staged values and returns updated red_keys
+        """
         self._is_staged = True
+        self._validation_callback = validation_callback
         # Hide live labels
         for label in self._result_labels.values():
             label.hide()
@@ -219,21 +228,37 @@ class ControlsPanel(QWidget):
             lbl = QLabel(f"{key}:")
             lbl.setStyleSheet("font-size: 13px; min-width: 100px;")
             edit = QLineEdit(value)
-            if key in red_keys:
-                edit.setStyleSheet(
-                    "font-size: 13px; background-color: #ffaaaa; color: #000; padding: 2px;"
-                )
-            else:
-                edit.setStyleSheet(
-                    "font-size: 13px; background-color: #ffffcc; padding: 2px;"
-                )
+            self._update_field_style(edit, key in red_keys)
             edit.setPlaceholderText("(empty = no value)")
+            # Connect text changes to real-time validation
+            edit.textChanged.connect(self._on_staged_value_changed)
             row.addWidget(lbl)
             row.addWidget(edit)
             container = QWidget()
             container.setLayout(row)
             self._results_layout.addWidget(container)
             self._staged_edits[key] = edit
+
+    def _update_field_style(self, edit: QLineEdit, is_red: bool) -> None:
+        """Update field styling based on validation status."""
+        if is_red:
+            edit.setStyleSheet(
+                "font-size: 13px; background-color: #ffaaaa; color: #000; padding: 2px;"
+            )
+        else:
+            edit.setStyleSheet(
+                "font-size: 13px; background-color: #ffffcc; padding: 2px;"
+            )
+
+    def _on_staged_value_changed(self) -> None:
+        """Called when any staged value changes; updates styling in real-time."""
+        if not self._validation_callback:
+            return
+        current_values = self.get_staged_edits()
+        new_red_keys = self._validation_callback(current_values)
+        # Update styling for all fields based on new red_keys
+        for key, edit in self._staged_edits.items():
+            self._update_field_style(edit, key in new_red_keys)
 
     def get_staged_edits(self) -> dict[str, str]:
         """Return the current edited staged values."""

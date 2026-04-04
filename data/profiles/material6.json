@@ -24,7 +24,7 @@
       "allowed_chars": "1234567890",
       "format_pattern": "",
       "dot_width": 0,
-      "enabled": true,
+      "enabled": false,
       "recognition_mode": "cnn",
       "template_dir": "",
       "csv_index": 2
@@ -50,7 +50,7 @@
       "allowed_chars": "1234567890",
       "format_pattern": "",
       "dot_width": 0,
-      "enabled": true,
+      "enabled": false,
       "recognition_mode": "cnn",
       "template_dir": "",
       "csv_index": 3

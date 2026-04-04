@@ -5,9 +5,9 @@
   "rois": [
     {
       "name": "int",
-      "x_offset": -19,
+      "x_offset": -17,
       "y_offset": -2,
-      "width": 19,
+      "width": 18,
       "height": 18,
       "filters": {
         "brightness": 0,

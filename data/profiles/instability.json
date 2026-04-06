@@ -57,10 +57,10 @@
     }
   ],
   "search_region": {
-    "x": 1860,
+    "x": 1833,
     "y": 673,
-    "w": 87,
-    "h": 25
+    "w": 106,
+    "h": 27
   },
   "anchor_roi": {},
   "monitor_index": 0

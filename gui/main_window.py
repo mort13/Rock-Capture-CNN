@@ -1173,11 +1173,51 @@ class MainWindow(QMainWindow):
             return {deposit_key}
         return set()
 
+    def _compute_volume_mass_red_keys(self, flat_values: dict[str, str]) -> set[str]:
+        """Return flat keys for volume and mass when volume*100 > mass."""
+        red_keys = set()
+        
+        # Try structured format first
+        if "scan/volume_int" in flat_values or "scan/mass" in flat_values:
+            mass_str = flat_values.get("scan/mass", "").strip() or "0"
+            vol_int_str = flat_values.get("scan/volume_int", "").strip() or "0"
+            vol_dec_str = flat_values.get("scan/volume_dec", "").strip() or "0"
+            
+            try:
+                mass = float(mass_str)
+                volume = float(f"{vol_int_str}.{vol_dec_str}")
+                
+                if volume * 100 > mass:
+                    red_keys.add("scan/mass")
+                    red_keys.add("scan/volume_int")
+                    red_keys.add("scan/volume_dec")
+            except ValueError:
+                pass
+        else:
+            # Try legacy format
+            mass_str = flat_values.get("values/mass/value", "").strip() or "0"
+            vol_int_str = flat_values.get("values/volume/int", "").strip() or "0"
+            vol_dec_str = flat_values.get("values/volume/decimal", "").strip() or "0"
+            
+            try:
+                mass = float(mass_str)
+                volume = float(f"{vol_int_str}.{vol_dec_str}")
+                
+                if volume * 100 > mass:
+                    red_keys.add("values/mass/value")
+                    red_keys.add("values/volume/int")
+                    red_keys.add("values/volume/decimal")
+            except ValueError:
+                pass
+        
+        return red_keys
+
     def _validate_staged_values(self, flat_values: dict[str, str]) -> set[str]:
         """Validation callback for real-time updates while editing staged values."""
         return (
             self._compute_amount_red_keys(flat_values)
             | self._compute_deposit_red_keys(flat_values)
+            | self._compute_volume_mass_red_keys(flat_values)
         )
 
     def _collect_flat_staged_values(self) -> dict[str, str]:
@@ -1204,11 +1244,18 @@ class MainWindow(QMainWindow):
         return flat
 
     def _apply_edits_to_staged(self, edits: dict[str, str]) -> None:
-        """Write edited values back into self._staged_data."""
+        """Write edited values back into self._staged_data.
+
+        Values that differ from the original staged value are treated as manually
+        entered; their confidence is set to None so they can be identified as such
+        in the raw JSON while being exported as confidence=1.0.
+        """
         if not self._staged_data:
             return
 
-        def _set_value(obj, path_parts: list[str], value: str):
+        original = self._collect_flat_staged_values()
+
+        def _set_value(obj, path_parts: list[str], value: str, manual: bool):
             if len(path_parts) == 0:
                 return
             key = path_parts[0]
@@ -1219,22 +1266,25 @@ class MainWindow(QMainWindow):
                     if len(path_parts) == 1:
                         if isinstance(obj[idx], dict) and "value" in obj[idx]:
                             obj[idx]["value"] = value if value else None
+                            if manual:
+                                obj[idx]["confidence"] = None
                     else:
-                        _set_value(obj[idx], path_parts[1:], value)
+                        _set_value(obj[idx], path_parts[1:], value, manual)
             elif isinstance(obj, dict):
                 if key in obj:
                     if len(path_parts) == 1:
                         if isinstance(obj[key], dict) and "value" in obj[key]:
                             obj[key]["value"] = value if value else None
+                            if manual:
+                                obj[key]["confidence"] = None
                     else:
-                        _set_value(obj[key], path_parts[1:], value)
+                        _set_value(obj[key], path_parts[1:], value, manual)
 
         for flat_key, value in edits.items():
-            # Split path: "compositions/[0]/material" -> ["compositions", "[0]", "material"]
-            tokens = []
-            for p in flat_key.replace("/", "\x00").split("\x00"):
-                if p:
-                    tokens.append(p)
+            manual = value != original.get(flat_key, value)
+            # Split on "/" but treat "[" as starting a new segment so that
+            # "scan/composition[0]/name" -> ["scan", "composition", "[0]", "name"]
+            tokens = [t for t in flat_key.replace("[", "/[").split("/") if t]
             if not tokens:
                 continue
             top_key = tokens[0]
@@ -1242,8 +1292,10 @@ class MainWindow(QMainWindow):
                 if len(tokens) == 1:
                     if isinstance(self._staged_data[top_key], dict) and "value" in self._staged_data[top_key]:
                         self._staged_data[top_key]["value"] = value if value else None
+                        if manual:
+                            self._staged_data[top_key]["confidence"] = None
                 else:
-                    _set_value(self._staged_data[top_key], tokens[1:], value)
+                    _set_value(self._staged_data[top_key], tokens[1:], value, manual)
 
     def _on_stage_pressed(self) -> None:
         # F9 again while staged → cancel and return to live preview

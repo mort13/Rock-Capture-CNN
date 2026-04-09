@@ -58,7 +58,7 @@ class MainWindow(QMainWindow):
         self._cluster_id: str = str(uuid.uuid4())
         self._cluster_history: list[str] = [self._cluster_id]
         self._cluster_history_index: int = 0
-        self._session_id = uuid.uuid4().hex[:8]
+        self._session_id = str(uuid.uuid4())
         self._session_started_at = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
         self._session_captures: list[dict] = []
         self._session_file: Path | None = None

@@ -15,8 +15,10 @@ Run:
 from __future__ import annotations
 
 import argparse
+import datetime
 import json
 import sys
+import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -196,12 +198,13 @@ def _material_min_confidence(mat: dict) -> float:
 #  Row building
 # ═══════════════════════════════════════════════════════════════════
 
-def _build_scan_row(session: dict, capture: dict, spec: ExportSpec) -> dict:
+def _build_scan_row(session: dict, capture: dict, user_id: str, spec: ExportSpec) -> dict:
     scan = capture.get("scan", {})
     loc = capture.get("location") or {}
     row: dict[str, Any] = {
         "session_id":   session.get("session_id"),
-        "user":         session.get("source", {}).get("user"),
+        "user_id":      user_id,
+        "user_name":    session.get("source", {}).get("user"),
         "org":          session.get("source", {}).get("org"),
         "timestamp":    capture.get("timestamp"),
         "capture_id":   capture.get("capture_id"),
@@ -268,7 +271,8 @@ def _build_material_rows(capture: dict, spec: ExportSpec) -> list[dict]:
 def _scan_schema(spec: ExportSpec) -> pa.Schema:
     fields = [
         pa.field("session_id",   pa.string()),
-        pa.field("user",         pa.string()),
+        pa.field("user_id",      pa.string()),
+        pa.field("user_name",    pa.string()),
         pa.field("org",          pa.string()),
         pa.field("timestamp",    pa.string()),
         pa.field("capture_id",   pa.string()),
@@ -307,7 +311,13 @@ def _rows_to_table(rows: list[dict], schema: pa.Schema) -> pa.Table:
     if not rows:
         return pa.table({f.name: pa.array([], type=f.type) for f in schema}, schema=schema)
     columns = {f.name: [row.get(f.name) for row in rows] for f in schema}
-    arrays = {name: pa.array(vals, type=schema.field(name).type) for name, vals in columns.items()}
+    arrays = {}
+    for name, vals in columns.items():
+        field_type = schema.field(name).type
+        # Ensure int types stay as int (convert via explicit casting)
+        if pa.types.is_integer(field_type):
+            vals = [int(v) if v is not None else None for v in vals]
+        arrays[name] = pa.array(vals, type=field_type)
     return pa.table(arrays, schema=schema)
 
 
@@ -318,32 +328,76 @@ def _rows_to_table(rows: list[dict], schema: pa.Schema) -> pa.Table:
 def export(
     captures_dir: Path,
     out_dir: Path,
+    user_id: str,
     spec: ExportSpec | None = None,
+    base_url: str = "https://pub-f15ce98d2f554311b0543bcb6562b082.r2.dev/compositions",
 ) -> None:
+    # Validate user_id is a valid UUIDv4
+    try:
+        uuid.UUID(user_id, version=4)
+    except ValueError:
+        print(f"Error: user_id must be a valid UUIDv4, got: {user_id}", file=sys.stderr)
+        sys.exit(1)
+    
     spec = spec or DEFAULT_SPEC
     json_files = sorted(captures_dir.glob("session_*.json"))
     if not json_files:
         print(f"No session files found in {captures_dir}")
         return
 
-    out_dir.mkdir(parents=True, exist_ok=True)
-
     scan_rows: list[dict] = []
     mat_rows: list[dict] = []
+    session_info: dict[str, str] = {}  # session_id -> timestamp
 
     for jf in json_files:
         with open(jf, "r", encoding="utf-8") as f:
             session = json.load(f)
+        
+        session_id = session.get("session_id")
+        timestamp = session.get("captures", [{}])[0].get("timestamp") if session.get("captures") else None
+        
+        # Validate session_id is a valid UUIDv4
+        if session_id:
+            try:
+                uuid.UUID(session_id, version=4)
+                session_info[session_id] = timestamp
+            except ValueError:
+                print(f"Warning: Skipping session with invalid UUIDv4: {session_id}", file=sys.stderr)
+                continue
 
         for capture in session.get("captures", []):
-            scan_rows.append(_build_scan_row(session, capture, spec))
+            scan_rows.append(_build_scan_row(session, capture, user_id, spec))
             mat_rows.extend(_build_material_rows(capture, spec))
+
+    # Export compositions with date/user/session directory structure
+    if mat_rows and session_info:
+        # Get date from first session
+        first_session_id = scan_rows[0].get("session_id") if scan_rows else list(session_info.keys())[0]
+        timestamp = session_info.get(first_session_id)
+        
+        if timestamp:
+            date_obj = datetime.datetime.fromisoformat(timestamp.replace('Z', '+00:00')).date()
+            date_str = date_obj.strftime("%Y/%m/%d")
+        else:
+            today = datetime.date.today()
+            date_str = today.strftime("%Y/%m/%d")
+        
+        # Create directory structure: out_dir/YYYY/MM/DD/user_id/session_id/
+        session_out_dir = out_dir / date_str / user_id / first_session_id
+        session_out_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Public URL for reference
+        public_url = f"{base_url}/{date_str}/{user_id}/{first_session_id}/compositions_batch001.parquet"
+        print(f"Public URL: {public_url}")
+    else:
+        session_out_dir = out_dir
+        session_out_dir.mkdir(parents=True, exist_ok=True)
 
     scan_schema = _scan_schema(spec)
     mat_schema  = _material_schema(spec)
 
-    scans_path = out_dir / "scans.parquet"
-    comps_path = out_dir / "compositions.parquet"
+    scans_path = session_out_dir / "scans_batch001.parquet"
+    comps_path = session_out_dir / "compositions_batch001.parquet"
 
     pq.write_table(_rows_to_table(scan_rows, scan_schema), scans_path, compression="snappy")
     pq.write_table(_rows_to_table(mat_rows,  mat_schema),  comps_path, compression="snappy")
@@ -361,6 +415,10 @@ def export(
 def main() -> None:
     parser = argparse.ArgumentParser(description="Export session JSONs to Parquet")
     parser.add_argument(
+        "--user-id", type=str, required=True,
+        help="User ID (must be a valid UUIDv4)",
+    )
+    parser.add_argument(
         "--captures", type=Path,
         default=Path(__file__).parent.parent / "Rock Capture Database" / "captures",
         help="Directory containing session_*.json files",
@@ -368,10 +426,15 @@ def main() -> None:
     parser.add_argument(
         "--out", type=Path,
         default=Path(__file__).parent.parent / "Rock Capture Database",
-        help="Output directory for scans.parquet and compositions.parquet",
+        help="Output base directory",
+    )
+    parser.add_argument(
+        "--base-url", type=str,
+        default="https://pub-f15ce98d2f554311b0543bcb6562b082.r2.dev/compositions",
+        help="Base URL for public file references",
     )
     args = parser.parse_args()
-    export(args.captures, args.out)
+    export(args.captures, args.out, args.user_id, base_url=args.base_url)
 
 
 if __name__ == "__main__":

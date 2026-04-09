@@ -34,6 +34,55 @@ from gui.anchor_setup_dialog import AnchorSetupDialog
 from gui.output_schema_dialog import OutputSchemaDialog
 
 
+def _should_cast_as_int(field_name: str) -> bool:
+    """
+    Determine if a field should be cast to integer in JSON output.
+    
+    Cast to int for:
+    - mass, resistance, quality (specific fields)
+    - Any field ending with _int or _dec
+    """
+    if field_name in ("mass", "resistance", "quality"):
+        return True
+    if field_name.endswith("_int") or field_name.endswith("_dec"):
+        return True
+    return False
+
+
+def _cast_value_if_needed(value: str | int | None, field_name: str) -> str | int | None:
+    """
+    Cast value to int if the field requires it, otherwise return as-is.
+    """
+    if value is None or value == "":
+        return value
+    if not _should_cast_as_int(field_name):
+        return value
+    try:
+        return int(value) if isinstance(value, str) else value
+    except (ValueError, TypeError):
+        return value
+
+
+def _apply_int_casting_to_dict(data: dict, parent_key: str = "") -> None:
+    """
+    Recursively walk through a dictionary and cast string values to integers
+    for fields that should be integers.
+    """
+    for key, value in data.items():
+        if isinstance(value, dict) and "value" in value:
+            # This is a value/confidence pair
+            if _should_cast_as_int(key):
+                value["value"] = _cast_value_if_needed(value["value"], key)
+        elif isinstance(value, dict):
+            # Recurse into nested dicts
+            _apply_int_casting_to_dict(value, key)
+        elif isinstance(value, list):
+            # Handle arrays (e.g., composition array)
+            for item in value:
+                if isinstance(item, dict):
+                    _apply_int_casting_to_dict(item, key)
+
+
 class MainWindow(QMainWindow):
     """Top-level application window for Rock Capture CNN."""
 
@@ -1562,6 +1611,10 @@ class MainWindow(QMainWindow):
                        if k not in ("timestamp", "_structured")}
         else:
             payload = {"values": self._staged_data["values"]}
+        
+        # Cast integer fields to int type
+        _apply_int_casting_to_dict(payload)
+        
         location = self._parse_location()
         capture = {
             "timestamp": self._staged_data["timestamp"],

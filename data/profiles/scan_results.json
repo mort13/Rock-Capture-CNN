@@ -713,6 +713,62 @@
       "ref_x": 25.0,
       "ref_y": 309.0,
       "sub_anchor": "perc5"
+    },
+    {
+      "name": "volume_int",
+      "x_offset": 0,
+      "y_offset": 0,
+      "width": 24,
+      "height": 17,
+      "filters": {
+        "brightness": 0,
+        "contrast": 0,
+        "threshold": 127,
+        "threshold_enabled": false,
+        "grayscale": true,
+        "invert": false,
+        "channel": "none"
+      },
+      "seg_mode": "fixed_width",
+      "char_width": 0,
+      "char_count": 3,
+      "allowed_chars": "",
+      "format_pattern": "",
+      "dot_width": 0,
+      "enabled": true,
+      "recognition_mode": "cnn",
+      "template_dir": "",
+      "csv_index": 0,
+      "ref_x": 145.0,
+      "ref_y": 190.0
+    },
+    {
+      "name": "volume_dec",
+      "x_offset": 0,
+      "y_offset": 0,
+      "width": 18,
+      "height": 17,
+      "filters": {
+        "brightness": 6,
+        "contrast": 0,
+        "threshold": 100,
+        "threshold_enabled": false,
+        "grayscale": true,
+        "invert": false,
+        "channel": "none"
+      },
+      "seg_mode": "fixed_width",
+      "char_width": 0,
+      "char_count": 2,
+      "allowed_chars": "",
+      "format_pattern": "",
+      "dot_width": 0,
+      "enabled": true,
+      "recognition_mode": "cnn",
+      "template_dir": "",
+      "csv_index": 0,
+      "ref_x": 172.0,
+      "ref_y": 189.0
     }
   ],
   "search_region": {
@@ -762,67 +818,67 @@
     },
     {
       "name": "perc1",
-      "template_path": "perc3.png",
+      "template_path": "perc1.png",
       "match_threshold": 0.7,
       "ref_x": 38.0,
-      "ref_y": 231.0,
+      "ref_y": 226.0,
       "search_region": {
         "x": 41,
-        "y": 234,
-        "width": 29,
-        "height": 17
+        "y": 236,
+        "width": 27,
+        "height": 14
       }
     },
     {
       "name": "perc2",
-      "template_path": "perc3.png",
+      "template_path": "percentage2.jpg",
       "match_threshold": 0.7,
       "ref_x": 37.0,
-      "ref_y": 248.0,
+      "ref_y": 250.0,
       "search_region": {
         "x": 41,
-        "y": 252,
-        "width": 29,
-        "height": 17
+        "y": 255,
+        "width": 27,
+        "height": 14
       }
     },
     {
       "name": "perc3",
-      "template_path": "perc3.png",
+      "template_path": "percentage2.jpg",
       "match_threshold": 0.7,
       "ref_x": 46.0,
       "ref_y": 265.0,
       "search_region": {
         "x": 41,
-        "y": 270,
-        "width": 29,
-        "height": 17
+        "y": 273,
+        "width": 27,
+        "height": 14
       }
     },
     {
       "name": "perc4",
-      "template_path": "perc3.png",
+      "template_path": "percentage2.jpg",
       "match_threshold": 0.7,
       "ref_x": 38.0,
       "ref_y": 285.0,
       "search_region": {
         "x": 41,
-        "y": 289,
-        "width": 29,
-        "height": 17
+        "y": 291,
+        "width": 27,
+        "height": 14
       }
     },
     {
       "name": "perc5",
-      "template_path": "perc3.png",
+      "template_path": "percentage2.jpg",
       "match_threshold": 0.7,
       "ref_x": 52.0,
       "ref_y": 305.0,
       "search_region": {
         "x": 41,
-        "y": 308,
-        "width": 29,
-        "height": 17
+        "y": 310,
+        "width": 27,
+        "height": 14
       }
     }
   ]

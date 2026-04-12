@@ -1,0 +1,11 @@
+{
+  "numClasses": 14,
+  "inputShape": [
+    1,
+    1,
+    28,
+    28
+  ],
+  "valAccuracy": 0.9800235017626322,
+  "charClasses": "0123456789.-%empty"
+}

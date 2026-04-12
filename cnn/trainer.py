@@ -7,11 +7,53 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader, random_split
+from torch.cuda.amp import autocast, GradScaler
 from PyQt6.QtCore import QThread, pyqtSignal
 from pathlib import Path
 
 from cnn.model import DigitCNN
 from cnn.dataset import CharacterDataset
+
+
+def discover_char_classes(data_dir: str | Path) -> tuple[list[str], str]:
+    """
+    Auto-discover available character classes from training_data subdirectories.
+    Returns (class_list, class_string) where:
+    - class_list: list of individual class tokens including multi-char tokens like 'empty'
+    - class_string: string representation for CharacterDataset
+    """
+    data_dir = Path(data_dir)
+    if not data_dir.exists():
+        return [], ""
+    
+    # Reverse mapping for special chars
+    char_dir_map = {
+        "dot": ".",
+        "dash": "-",
+        "percent": "%",
+        "comma": ",",
+        "empty": "empty",
+    }
+    
+    classes = []
+    for subdir in sorted(data_dir.iterdir()):
+        if subdir.is_dir():
+            dir_name = subdir.name
+            # Convert directory name back to character/token
+            char = char_dir_map.get(dir_name, dir_name)
+            classes.append(char)
+    
+    # Sort: digits first, then special chars
+    digits = [c for c in classes if c.isdigit()]
+    special = [c for c in classes if not c.isdigit()]
+    sorted_classes = sorted(digits) + sorted(special)
+    
+    # Build string: single chars directly, 'empty' as special token
+    class_str = "".join(c for c in sorted_classes if c != "empty")
+    if "empty" in sorted_classes:
+        class_str += "empty"
+    
+    return sorted_classes, class_str
 
 
 class TrainerThread(QThread):
@@ -33,7 +75,7 @@ class TrainerThread(QThread):
         self,
         data_dir: str | Path,
         output_model_path: str | Path,
-        char_classes: str = "0123456789.-%",
+        char_classes: str = "0123456789.-%empty",
         num_epochs: int = 30,
         batch_size: int = 32,
         learning_rate: float = 0.001,
@@ -56,7 +98,26 @@ class TrainerThread(QThread):
     def run(self) -> None:
         try:
             self.progress_update.emit("Loading dataset...")
+            
+            # Auto-discover classes from training_data directory if using default
+            num_classes = None
+            if not self.char_classes or self.char_classes == "0123456789.-%empty":
+                discovered_list, discovered_str = discover_char_classes(self.data_dir)
+                if discovered_list:
+                    self.char_classes = discovered_str
+                    num_classes = len(discovered_list)
+            
             dataset = CharacterDataset(self.data_dir, self.char_classes)
+            
+            # If not auto-discovered, count actual classes in dataset
+            if num_classes is None:
+                # For non-auto-discovered case, we need to count carefully
+                # If "empty" is in the string, it's one class, not 5
+                if "empty" in self.char_classes:
+                    base_chars = self.char_classes.replace("empty", "")
+                    num_classes = len(base_chars) + 1
+                else:
+                    num_classes = len(self.char_classes)
 
             if len(dataset) < 10:
                 self.training_failed.emit(
@@ -69,15 +130,19 @@ class TrainerThread(QThread):
             train_set, val_set = random_split(dataset, [train_size, val_size])
 
             train_loader = DataLoader(
-                train_set, batch_size=self.batch_size, shuffle=True
+                train_set, batch_size=self.batch_size, shuffle=True,
+                num_workers=4, pin_memory=True
             )
             val_loader = DataLoader(
-                val_set, batch_size=self.batch_size, shuffle=False
+                val_set, batch_size=self.batch_size, shuffle=False,
+                num_workers=4, pin_memory=True
             )
 
-            num_classes = len(self.char_classes)
             device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
             model = DigitCNN(num_classes=num_classes).to(device)
+            
+            # Mixed precision training for GPU speedup
+            scaler = GradScaler() if device.type == 'cuda' else None
             criterion = nn.CrossEntropyLoss()
             optimizer = optim.Adam(model.parameters(), lr=self.learning_rate)
 
@@ -98,10 +163,20 @@ class TrainerThread(QThread):
                     images = images.to(device)
                     labels = labels.to(device)
                     optimizer.zero_grad()
-                    outputs = model(images)
-                    loss = criterion(outputs, labels)
-                    loss.backward()
-                    optimizer.step()
+                    
+                    if scaler:  # Mixed precision on GPU
+                        with autocast():
+                            outputs = model(images)
+                            loss = criterion(outputs, labels)
+                        scaler.scale(loss).backward()
+                        scaler.step(optimizer)
+                        scaler.update()
+                    else:  # Standard training on CPU
+                        outputs = model(images)
+                        loss = criterion(outputs, labels)
+                        loss.backward()
+                        optimizer.step()
+                    
                     total_loss += loss.item()
                 avg_loss = total_loss / len(train_loader)
 

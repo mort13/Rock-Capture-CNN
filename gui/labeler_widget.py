@@ -132,7 +132,7 @@ class LabelerWidget(QGroupBox):
 
         key = event.text()
         label = self._KEY_REMAP.get(key, key)
-        valid_chars = "0123456789.-%"
+        valid_chars = "0123456789.-%empty"
 
         if label in valid_chars:
             self._save_current(label)

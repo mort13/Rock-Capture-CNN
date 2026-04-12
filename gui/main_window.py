@@ -1094,7 +1094,7 @@ class MainWindow(QMainWindow):
         model_name = "model.pth"
         model_path = models_dir / model_name
 
-        char_classes = self._predictor.char_classes if self._predictor.is_loaded else "0123456789.-%"
+        char_classes = self._predictor.char_classes if self._predictor.is_loaded else "0123456789.-%empty"
         trainer = TrainerThread(
             data_dir=str(data_dir),
             output_model_path=str(model_path),
@@ -1194,14 +1194,10 @@ class MainWindow(QMainWindow):
         model_name = "word_model.pth"
         model_path = models_dir / model_name
 
-        existing_classes = (
-            self._word_predictor.word_classes
-            if self._word_predictor.is_loaded else None
-        )
         trainer = WordTrainerThread(
             data_dir=str(data_dir),
             output_model_path=str(model_path),
-            word_classes=existing_classes,
+            word_classes=None,  # Auto-discover from training_data folder
             parent=self,
         )
 

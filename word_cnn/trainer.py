@@ -7,11 +7,26 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader, random_split
+from torch.cuda.amp import autocast, GradScaler
 from PyQt6.QtCore import QThread, pyqtSignal
 from pathlib import Path
 
 from word_cnn.model import WordCNN
 from word_cnn.dataset import WordDataset
+
+
+def discover_word_classes(data_dir: str | Path) -> list[str]:
+    """
+    Auto-discover available word classes from word_training_data subdirectories.
+    Returns a sorted list of class names (includes directories even if empty).
+    """
+    data_dir = Path(data_dir)
+    classes = []
+    if data_dir.exists():
+        for subdir in sorted(data_dir.iterdir()):
+            if subdir.is_dir():
+                classes.append(subdir.name)
+    return sorted(classes)
 
 
 class WordTrainerThread(QThread):
@@ -56,6 +71,10 @@ class WordTrainerThread(QThread):
     def run(self) -> None:
         try:
             self.progress_update.emit("Loading dataset...")
+            # Auto-discover classes if None
+            if self.word_classes is None:
+                self.word_classes = discover_word_classes(self.data_dir)
+            
             # Load without augmentation first to discover classes + count
             raw_dataset = WordDataset(self.data_dir, self.word_classes)
 
@@ -86,17 +105,27 @@ class WordTrainerThread(QThread):
                 self.data_dir, word_classes, augment=False, oversample=1
             )
 
+            # Use num_workers for parallel CPU data loading
+            # pin_memory speeds up GPU transfer if CUDA is available
+            use_cuda = torch.cuda.is_available()
+            num_workers = 4 if use_cuda else 2  # Adjust based on your CPU cores
+            
             train_loader = DataLoader(
-                train_ds, batch_size=self.batch_size, shuffle=True
+                train_ds, batch_size=self.batch_size, shuffle=True,
+                num_workers=num_workers, pin_memory=use_cuda
             )
             val_loader = DataLoader(
-                val_ds, batch_size=self.batch_size, shuffle=False
+                val_ds, batch_size=self.batch_size, shuffle=False,
+                num_workers=num_workers, pin_memory=use_cuda
             )
 
             device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
             model = WordCNN(num_classes=num_classes).to(device)
             criterion = nn.CrossEntropyLoss()
             optimizer = optim.Adam(model.parameters(), lr=self.learning_rate)
+            
+            # Mixed precision training for GPU speedup
+            scaler = GradScaler() if device.type == 'cuda' else None
 
             self.progress_update.emit(
                 f"Training on {n_real} images (×{oversample} oversample, augmented), "
@@ -115,10 +144,20 @@ class WordTrainerThread(QThread):
                     images = images.to(device)
                     labels = labels.to(device)
                     optimizer.zero_grad()
-                    outputs = model(images)
-                    loss = criterion(outputs, labels)
-                    loss.backward()
-                    optimizer.step()
+                    
+                    if scaler:  # Mixed precision on GPU
+                        with autocast():
+                            outputs = model(images)
+                            loss = criterion(outputs, labels)
+                        scaler.scale(loss).backward()
+                        scaler.step(optimizer)
+                        scaler.update()
+                    else:  # Standard training on CPU
+                        outputs = model(images)
+                        loss = criterion(outputs, labels)
+                        loss.backward()
+                        optimizer.step()
+                    
                     total_loss += loss.item()
                 avg_loss = total_loss / len(train_loader)
 

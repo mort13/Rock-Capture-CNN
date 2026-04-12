@@ -143,14 +143,12 @@ class WordDataset(Dataset):
         self.samples = self._base_samples * max(1, oversample)
 
     def _discover_classes(self) -> list[str]:
-        """Discover classes from subdirectory names that contain at least one image."""
+        """Discover classes from all subdirectories, including empty ones."""
         classes = []
         if not self.data_dir.exists():
             return classes
         for d in sorted(self.data_dir.iterdir()):
-            if d.is_dir() and any(
-                f for ext in _IMG_EXTS for f in d.glob(ext)
-            ):
+            if d.is_dir():
                 classes.append(d.name)
         return classes
 

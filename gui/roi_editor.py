@@ -1,16 +1,18 @@
 """
 ROI editor widget for Rock Capture CNN.
 List of ROI definitions with add/edit/remove functionality.
+List of sub-anchor definitions with search region editing.
 """
 
 from PyQt6.QtWidgets import (
     QGroupBox, QVBoxLayout, QHBoxLayout, QPushButton,
     QListWidget, QListWidgetItem, QDialog, QFormLayout, QLineEdit, QSpinBox,
-    QDialogButtonBox, QComboBox, QLabel,
+    QDialogButtonBox, QComboBox, QLabel, QFileDialog,
 )
 from PyQt6.QtCore import pyqtSignal, Qt
+from pathlib import Path
 
-from core.profile import ROIDefinition
+from core.profile import ROIDefinition, AnchorPoint
 
 
 _SEG_MODES = [
@@ -34,9 +36,12 @@ _RECOG_VALUES = [value for _, value in _RECOG_MODES]
 class ROIEditDialog(QDialog):
     """Dialog for adding or editing a single ROI definition."""
 
-    def __init__(self, parent=None, roi: ROIDefinition | None = None):
+    def __init__(self, parent=None, roi: ROIDefinition | None = None,
+                 multi_anchor: bool = False,
+                 sub_anchor_names: list[str] | None = None):
         super().__init__(parent)
         self.setWindowTitle("Edit ROI" if roi else "Add ROI")
+        self._multi_anchor = multi_anchor
         layout = QFormLayout(self)
 
         self.name_edit = QLineEdit(roi.name if roi else "")
@@ -71,8 +76,54 @@ class ROIEditDialog(QDialog):
         )
         layout.addRow("CSV column index:", self.csv_index_spin)
 
-        layout.addRow("X Offset:", self.x_spin)
-        layout.addRow("Y Offset:", self.y_spin)
+        # --- Multi-anchor reference position ---
+        self.ref_x_spin = QSpinBox()
+        self.ref_x_spin.setRange(-10000, 10000)
+        self.ref_x_spin.setValue(int(roi.ref_x) if roi else 0)
+        self.ref_x_spin.setToolTip(
+            "Absolute X position in the reference frame.\n"
+            "Used with multi-anchor resolution-independent mode."
+        )
+        self.ref_y_spin = QSpinBox()
+        self.ref_y_spin.setRange(-10000, 10000)
+        self.ref_y_spin.setValue(int(roi.ref_y) if roi else 0)
+        self.ref_y_spin.setToolTip(
+            "Absolute Y position in the reference frame.\n"
+            "Used with multi-anchor resolution-independent mode."
+        )
+        self._ref_x_label = QLabel("Ref X:")
+        self._ref_y_label = QLabel("Ref Y:")
+        layout.addRow(self._ref_x_label, self.ref_x_spin)
+        layout.addRow(self._ref_y_label, self.ref_y_spin)
+
+        self.sub_anchor_combo = QComboBox()
+        self.sub_anchor_combo.addItem("(none)")
+        if sub_anchor_names:
+            for sa_name in sub_anchor_names:
+                self.sub_anchor_combo.addItem(sa_name)
+        if roi and roi.sub_anchor:
+            idx = self.sub_anchor_combo.findText(roi.sub_anchor)
+            if idx >= 0:
+                self.sub_anchor_combo.setCurrentIndex(idx)
+        self._sub_anchor_label = QLabel("Sub-anchor:")
+        layout.addRow(self._sub_anchor_label, self.sub_anchor_combo)
+
+        # Show/hide multi-anchor vs legacy fields
+        for w in (self._ref_x_label, self.ref_x_spin,
+                  self._ref_y_label, self.ref_y_spin,
+                  self._sub_anchor_label, self.sub_anchor_combo):
+            w.setVisible(multi_anchor)
+
+        # --- Legacy position fields ---
+        self._x_label = QLabel("X Offset:")
+        self._y_label = QLabel("Y Offset:")
+        layout.addRow(self._x_label, self.x_spin)
+        layout.addRow(self._y_label, self.y_spin)
+        self._x_label.setVisible(not multi_anchor)
+        self.x_spin.setVisible(not multi_anchor)
+        self._y_label.setVisible(not multi_anchor)
+        self.y_spin.setVisible(not multi_anchor)
+
         layout.addRow("Width:", self.w_spin)
         layout.addRow("Height:", self.h_spin)
 
@@ -217,6 +268,9 @@ class ROIEditDialog(QDialog):
             w.setEnabled(is_fixed)
 
     def get_roi(self) -> ROIDefinition:
+        sub_anchor = ""
+        if self._multi_anchor and self.sub_anchor_combo.currentIndex() > 0:
+            sub_anchor = self.sub_anchor_combo.currentText()
         return ROIDefinition(
             name=self.name_edit.text() or "unnamed",
             x_offset=self.x_spin.value(),
@@ -232,6 +286,9 @@ class ROIEditDialog(QDialog):
             recognition_mode=_RECOG_VALUES[self.recog_combo.currentIndex()],
             template_dir=self.template_dir_edit.text(),
             csv_index=self.csv_index_spin.value(),
+            ref_x=float(self.ref_x_spin.value()),
+            ref_y=float(self.ref_y_spin.value()),
+            sub_anchor=sub_anchor,
         )
 
 
@@ -274,6 +331,24 @@ class ROIEditor(QGroupBox):
 
         self._rois: list[ROIDefinition] = []
         self._refreshing = False
+        self._multi_anchor: bool = False
+        self._sub_anchor_names: list[str] = []
+
+    @property
+    def multi_anchor(self) -> bool:
+        return self._multi_anchor
+
+    @multi_anchor.setter
+    def multi_anchor(self, value: bool) -> None:
+        self._multi_anchor = value
+
+    @property
+    def sub_anchor_names(self) -> list[str]:
+        return self._sub_anchor_names
+
+    @sub_anchor_names.setter
+    def sub_anchor_names(self, names: list[str]) -> None:
+        self._sub_anchor_names = list(names)
 
     @property
     def rois(self) -> list[ROIDefinition]:
@@ -289,9 +364,15 @@ class ROIEditor(QGroupBox):
         for roi in self._rois:
             pattern_hint = f"  {roi.format_pattern}" if roi.format_pattern else ""
             idx_hint = f"#{roi.csv_index}  " if roi.csv_index > 0 else "#-  "
+            if self._multi_anchor and (roi.ref_x or roi.ref_y):
+                pos_hint = f"ref({roi.ref_x:.0f}, {roi.ref_y:.0f})"
+                sa_hint = f" →{roi.sub_anchor}" if roi.sub_anchor else ""
+            else:
+                pos_hint = f"({roi.x_offset}, {roi.y_offset})"
+                sa_hint = ""
             item = QListWidgetItem(
-                f"{idx_hint}{roi.name}  ({roi.x_offset}, {roi.y_offset}) "
-                f"{roi.width}x{roi.height}  [{roi.seg_mode}]{pattern_hint}"
+                f"{idx_hint}{roi.name}  {pos_hint} "
+                f"{roi.width}x{roi.height}  [{roi.seg_mode}]{pattern_hint}{sa_hint}"
             )
             item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
             item.setCheckState(
@@ -309,7 +390,10 @@ class ROIEditor(QGroupBox):
             self.rois_changed.emit()
 
     def _on_add(self) -> None:
-        dialog = ROIEditDialog(self)
+        dialog = ROIEditDialog(
+            self, multi_anchor=self._multi_anchor,
+            sub_anchor_names=self._sub_anchor_names,
+        )
         if dialog.exec():
             roi = dialog.get_roi()
             self._rois.append(roi)
@@ -320,7 +404,11 @@ class ROIEditor(QGroupBox):
         idx = self.roi_list.currentRow()
         if idx < 0 or idx >= len(self._rois):
             return
-        dialog = ROIEditDialog(self, self._rois[idx])
+        dialog = ROIEditDialog(
+            self, self._rois[idx],
+            multi_anchor=self._multi_anchor,
+            sub_anchor_names=self._sub_anchor_names,
+        )
         if dialog.exec():
             new_roi = dialog.get_roi()
             new_roi.filters = self._rois[idx].filters  # preserve filter settings
@@ -352,3 +440,235 @@ class ROIEditor(QGroupBox):
         idx = self.roi_list.currentRow()
         if 0 <= idx < len(self._rois):
             self._rois[idx].filters = filters
+
+
+# ============================================================================
+# Sub-Anchor Editor
+# ============================================================================
+
+class SubAnchorEditDialog(QDialog):
+    """Dialog for editing a sub-anchor's search region and template image."""
+
+    def __init__(self, parent=None, anchor: AnchorPoint | None = None, anchors_dir: Path | None = None):
+        super().__init__(parent)
+        self.setWindowTitle("Edit Sub-Anchor" if anchor else "Add Sub-Anchor")
+        self._anchors_dir = anchors_dir or Path("data/anchors")
+        layout = QFormLayout(self)
+
+        self.name_edit = QLineEdit(anchor.name if anchor else "")
+        self.name_edit.setPlaceholderText("e.g. percent_sign")
+        layout.addRow("Name:", self.name_edit)
+
+        # Template file selection
+        template_layout = QHBoxLayout()
+        self.template_path_edit = QLineEdit(anchor.template_path if anchor else "")
+        self.template_path_edit.setPlaceholderText("e.g. percent_sign.png (relative to data/anchors)")
+        self.template_path_edit.setReadOnly(True)
+        self.template_path_edit.setToolTip(
+            "Path to the sub-anchor template image (relative to data/anchors/).\n"
+            "Should be a PNG or JPG file."
+        )
+        self.browse_btn = QPushButton("Browse...")
+        self.browse_btn.setFixedWidth(80)
+        self.browse_btn.clicked.connect(self._on_browse_template)
+        template_layout.addWidget(self.template_path_edit)
+        template_layout.addWidget(self.browse_btn)
+        layout.addRow("Template:", template_layout)
+
+        self.ref_x_spin = QSpinBox()
+        self.ref_x_spin.setRange(-10000, 10000)
+        self.ref_x_spin.setValue(int(anchor.ref_x) if anchor else 0)
+        self.ref_x_spin.setToolTip(
+            "Expected X position of the sub-anchor in the reference frame."
+        )
+        layout.addRow("Ref X:", self.ref_x_spin)
+
+        self.ref_y_spin = QSpinBox()
+        self.ref_y_spin.setRange(-10000, 10000)
+        self.ref_y_spin.setValue(int(anchor.ref_y) if anchor else 0)
+        self.ref_y_spin.setToolTip(
+            "Expected Y position of the sub-anchor in the reference frame."
+        )
+        layout.addRow("Ref Y:", self.ref_y_spin)
+
+        self.threshold_spin = QSpinBox()
+        self.threshold_spin.setRange(0, 100)
+        self.threshold_spin.setValue(int((anchor.match_threshold if anchor else 0.7) * 100))
+        self.threshold_spin.setSuffix("%")
+        self.threshold_spin.setToolTip(
+            "Template matching confidence threshold (0-100%).\n"
+            "Higher = stricter matching."
+        )
+        layout.addRow("Match Threshold:", self.threshold_spin)
+
+        layout.addWidget(QLabel("Search Region (optional)"))
+        layout.addWidget(QLabel("Leave at 0 to use default padding"))
+
+        self.search_x_spin = QSpinBox()
+        self.search_x_spin.setRange(-10000, 10000)
+        if anchor and anchor.search_region:
+            self.search_x_spin.setValue(int(anchor.search_region.get("x", 0)))
+        layout.addRow("Search X:", self.search_x_spin)
+
+        self.search_y_spin = QSpinBox()
+        self.search_y_spin.setRange(-10000, 10000)
+        if anchor and anchor.search_region:
+            self.search_y_spin.setValue(int(anchor.search_region.get("y", 0)))
+        layout.addRow("Search Y:", self.search_y_spin)
+
+        self.search_w_spin = QSpinBox()
+        self.search_w_spin.setRange(0, 10000)
+        if anchor and anchor.search_region:
+            self.search_w_spin.setValue(int(anchor.search_region.get("width", 0)))
+        layout.addRow("Search Width:", self.search_w_spin)
+
+        self.search_h_spin = QSpinBox()
+        self.search_h_spin.setRange(0, 10000)
+        if anchor and anchor.search_region:
+            self.search_h_spin.setValue(int(anchor.search_region.get("height", 0)))
+        layout.addRow("Search Height:", self.search_h_spin)
+
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addRow(buttons)
+
+    def _on_browse_template(self) -> None:
+        """Open file dialog to select a template image."""
+        start_dir = str(self._anchors_dir)
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Select Sub-Anchor Template",
+            start_dir,
+            "Image Files (*.png *.jpg *.jpeg);;All Files (*)",
+        )
+        if path:
+            try:
+                path_obj = Path(path)
+                anchors_dir_abs = self._anchors_dir.resolve()
+                rel_path = path_obj.relative_to(anchors_dir_abs)
+                self.template_path_edit.setText(str(rel_path))
+            except ValueError:
+                # File is not under anchors_dir, show full path warning
+                self.template_path_edit.setText(path)
+
+    def get_anchor(self) -> AnchorPoint:
+        """Return the edited sub-anchor."""
+        search_region = None
+        if (self.search_w_spin.value() > 0 or self.search_h_spin.value() > 0):
+            search_region = {
+                "x": self.search_x_spin.value(),
+                "y": self.search_y_spin.value(),
+                "width": self.search_w_spin.value(),
+                "height": self.search_h_spin.value(),
+            }
+        
+        return AnchorPoint(
+            name=self.name_edit.text() or "unnamed",
+            template_path=self.template_path_edit.text(),
+            match_threshold=self.threshold_spin.value() / 100.0,
+            ref_x=float(self.ref_x_spin.value()),
+            ref_y=float(self.ref_y_spin.value()),
+            search_region=search_region,
+        )
+
+
+class SubAnchorEditor(QGroupBox):
+    """
+    Sub-anchor list management widget for multi-anchor mode.
+
+    Signals:
+        sub_anchors_changed(): emitted when sub-anchors are added/removed/edited
+    """
+    sub_anchors_changed = pyqtSignal()
+
+    def __init__(self, parent=None):
+        super().__init__("Sub-Anchors", parent)
+        layout = QVBoxLayout(self)
+
+        self.list_widget = QListWidget()
+        layout.addWidget(self.list_widget)
+
+        btn_row = QHBoxLayout()
+        self.add_btn = QPushButton("+")
+        self.add_btn.setFixedWidth(40)
+        self.add_btn.setToolTip("Add sub-anchor")
+        self.add_btn.clicked.connect(self._on_add)
+        
+        self.edit_btn = QPushButton("Edit")
+        self.edit_btn.setToolTip("Edit selected sub-anchor")
+        self.edit_btn.clicked.connect(self._on_edit)
+        
+        self.remove_btn = QPushButton("-")
+        self.remove_btn.setFixedWidth(40)
+        self.remove_btn.setToolTip("Remove selected sub-anchor")
+        self.remove_btn.clicked.connect(self._on_remove)
+
+        btn_row.addWidget(self.add_btn)
+        btn_row.addWidget(self.edit_btn)
+        btn_row.addWidget(self.remove_btn)
+        layout.addLayout(btn_row)
+
+        self._sub_anchors: list[AnchorPoint] = []
+        self._anchors_dir: Path = Path("data/anchors")
+        self.setVisible(False)  # Hidden by default, shown in multi-anchor mode
+
+    @property
+    def sub_anchors(self) -> list[AnchorPoint]:
+        return list(self._sub_anchors)
+
+    @property
+    def anchors_dir(self) -> Path:
+        return self._anchors_dir
+
+    @anchors_dir.setter
+    def anchors_dir(self, path: Path | str) -> None:
+        self._anchors_dir = Path(path)
+
+    def load_sub_anchors(self, anchors: list[AnchorPoint]) -> None:
+        self._sub_anchors = list(anchors)
+        self._refresh_list()
+
+    def _refresh_list(self) -> None:
+        self.list_widget.clear()
+        for anchor in self._sub_anchors:
+            search_hint = ""
+            if anchor.search_region:
+                sr = anchor.search_region
+                search_hint = f"  search:({sr.get('x', 0)}, {sr.get('y', 0)}) {sr.get('width', 0)}×{sr.get('height', 0)}"
+            threshold_pct = int(anchor.match_threshold * 100)
+            text = (
+                f"{anchor.name}  ref({anchor.ref_x:.0f}, {anchor.ref_y:.0f})  "
+                f"thresh:{threshold_pct}%{search_hint}"
+            )
+            self.list_widget.addItem(text)
+
+    def _on_add(self) -> None:
+        dialog = SubAnchorEditDialog(self, None, self._anchors_dir)
+        if dialog.exec():
+            anchor = dialog.get_anchor()
+            self._sub_anchors.append(anchor)
+            self._refresh_list()
+            self.sub_anchors_changed.emit()
+
+    def _on_edit(self) -> None:
+        idx = self.list_widget.currentRow()
+        if idx < 0 or idx >= len(self._sub_anchors):
+            return
+        dialog = SubAnchorEditDialog(self, self._sub_anchors[idx], self._anchors_dir)
+        if dialog.exec():
+            new_anchor = dialog.get_anchor()
+            self._sub_anchors[idx] = new_anchor
+            self._refresh_list()
+            self.list_widget.setCurrentRow(idx)
+            self.sub_anchors_changed.emit()
+
+    def _on_remove(self) -> None:
+        idx = self.list_widget.currentRow()
+        if idx < 0 or idx >= len(self._sub_anchors):
+            return
+        self._sub_anchors.pop(idx)
+        self._refresh_list()
+        self.sub_anchors_changed.emit()

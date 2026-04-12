@@ -7,8 +7,10 @@ import cv2
 import numpy as np
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QGroupBox, QScrollArea, QSplitter,
+    QPushButton,
 )
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QRect, QPoint
+from PyQt6.QtGui import QWheelEvent
 
 from utils.image_utils import cv_to_qpixmap, scale_pixmap_to_label, numpy_grayscale_to_qpixmap
 
@@ -126,13 +128,41 @@ class PreviewWidget(QWidget):
     """
     Left side of the main window.
     Contains a large annotated frame preview and a horizontal ROI detail strip.
+    Supports zooming via mouse wheel or +/- buttons.
     """
 
     def __init__(self, parent=None):
         super().__init__(parent)
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
-        outer.setSpacing(0)
+        outer.setSpacing(4)
+
+        # Top: zoom controls
+        zoom_bar = QHBoxLayout()
+        zoom_label = QLabel("Zoom:")
+        zoom_bar.addWidget(zoom_label)
+        
+        self._zoom_level_label = QLabel("100%")
+        self._zoom_level_label.setFixedWidth(50)
+        zoom_bar.addWidget(self._zoom_level_label)
+        
+        zoom_minus = QPushButton("−")
+        zoom_minus.setFixedWidth(30)
+        zoom_minus.clicked.connect(self._zoom_out)
+        zoom_bar.addWidget(zoom_minus)
+        
+        zoom_plus = QPushButton("+")
+        zoom_plus.setFixedWidth(30)
+        zoom_plus.clicked.connect(self._zoom_in)
+        zoom_bar.addWidget(zoom_plus)
+        
+        zoom_reset = QPushButton("Reset")
+        zoom_reset.setFixedWidth(50)
+        zoom_reset.clicked.connect(self._zoom_reset)
+        zoom_bar.addWidget(zoom_reset)
+        
+        zoom_bar.addStretch()
+        outer.addLayout(zoom_bar)
 
         splitter = QSplitter(Qt.Orientation.Vertical)
         outer.addWidget(splitter)
@@ -143,6 +173,7 @@ class PreviewWidget(QWidget):
         self.main_preview.setStyleSheet(
             "QLabel { background-color: #1e1e1e; border: 1px solid #444; color: #888; }"
         )
+        self.main_preview.wheelEvent = self._on_preview_wheel  # Install wheel handler
         splitter.addWidget(self.main_preview)
 
         roi_scroll = QScrollArea()
@@ -158,12 +189,56 @@ class PreviewWidget(QWidget):
         splitter.setSizes([600, 220])
 
         self._roi_cards: dict[str, ROICard] = {}
+        self._original_pixmap = None
+        self._zoom_factor = 1.0  # Zoom multiplier (1.0 = 100%)
+        
+    # -- Zoom control -------------------------------------------------------
+    
+    def _on_preview_wheel(self, event: QWheelEvent) -> None:
+        """Zoom on mouse wheel."""
+        if event.angleDelta().y() > 0:
+            self._zoom_in()
+        else:
+            self._zoom_out()
+    
+    def _zoom_in(self) -> None:
+        """Increase zoom by 20%."""
+        self._zoom_factor = min(3.0, self._zoom_factor + 0.2)
+        self._update_zoom_display()
+    
+    def _zoom_out(self) -> None:
+        """Decrease zoom by 20%."""
+        self._zoom_factor = max(0.5, self._zoom_factor - 0.2)
+        self._update_zoom_display()
+    
+    def _zoom_reset(self) -> None:
+        """Reset zoom to fit."""
+        self._zoom_factor = 1.0
+        self._update_zoom_display()
+    
+    def _update_zoom_display(self) -> None:
+        """Reapply the current zoom level to the main preview."""
+        if self._original_pixmap is None:
+            return
+        
+        self._zoom_level_label.setText(f"{int(self._zoom_factor * 100)}%")
+        
+        # Scale pixmap by zoom factor
+        scaled_w = int(self._original_pixmap.width() * self._zoom_factor)
+        scaled_h = int(self._original_pixmap.height() * self._zoom_factor)
+        zoomed = self._original_pixmap.scaled(
+            scaled_w, scaled_h,
+            Qt.AspectRatioMode.KeepAspectRatio,
+            Qt.TransformationMode.SmoothTransformation,
+        )
+        self.main_preview.setPixmap(zoomed)
 
     def update_main_preview(self, annotated_frame: np.ndarray) -> None:
         """Display the annotated frame (BGR numpy array)."""
         pixmap = cv_to_qpixmap(annotated_frame)
-        scaled = scale_pixmap_to_label(pixmap, self.main_preview.size())
-        self.main_preview.setPixmap(scaled)
+        self._original_pixmap = pixmap
+        # Preserve zoom level across frame updates (don't reset to 100%)
+        self._update_zoom_display()
 
     def update_roi_previews(self, roi_results: list, profile_name: str = "") -> None:
         """Update per-ROI detail cards, qualified by profile name."""

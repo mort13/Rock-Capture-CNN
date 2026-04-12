@@ -30,7 +30,57 @@ from gui.controls_panel import ControlsPanel
 from gui.region_selector import ScreenCaptureOverlay
 from gui.training_dialog import TrainingDialog
 from gui.anchor_roi_dialog import AnchorROIDialog
+from gui.anchor_setup_dialog import AnchorSetupDialog
 from gui.output_schema_dialog import OutputSchemaDialog
+
+
+def _should_cast_as_int(field_name: str) -> bool:
+    """
+    Determine if a field should be cast to integer in JSON output.
+    
+    Cast to int for:
+    - mass, resistance, quality (specific fields)
+    - Any field ending with _int or _dec
+    """
+    if field_name in ("mass", "resistance", "quality"):
+        return True
+    if field_name.endswith("_int") or field_name.endswith("_dec"):
+        return True
+    return False
+
+
+def _cast_value_if_needed(value: str | int | None, field_name: str) -> str | int | None:
+    """
+    Cast value to int if the field requires it, otherwise return as-is.
+    """
+    if value is None or value == "":
+        return value
+    if not _should_cast_as_int(field_name):
+        return value
+    try:
+        return int(value) if isinstance(value, str) else value
+    except (ValueError, TypeError):
+        return value
+
+
+def _apply_int_casting_to_dict(data: dict, parent_key: str = "") -> None:
+    """
+    Recursively walk through a dictionary and cast string values to integers
+    for fields that should be integers.
+    """
+    for key, value in data.items():
+        if isinstance(value, dict) and "value" in value:
+            # This is a value/confidence pair
+            if _should_cast_as_int(key):
+                value["value"] = _cast_value_if_needed(value["value"], key)
+        elif isinstance(value, dict):
+            # Recurse into nested dicts
+            _apply_int_casting_to_dict(value, key)
+        elif isinstance(value, list):
+            # Handle arrays (e.g., composition array)
+            for item in value:
+                if isinstance(item, dict):
+                    _apply_int_casting_to_dict(item, key)
 
 
 class MainWindow(QMainWindow):
@@ -477,9 +527,12 @@ class MainWindow(QMainWindow):
         self.controls_panel.anchor_browse_clicked.connect(self._on_anchor_browse)
         self.controls_panel.anchor_roi_clicked.connect(self._on_set_anchor_roi)
         self.controls_panel.anchor_roi_clear_clicked.connect(self._on_clear_anchor_roi)
+        self.controls_panel.anchor_setup_clicked.connect(self._on_anchor_setup)
         self.controls_panel.anchor_threshold_changed.connect(self._on_anchor_threshold)
         self.controls_panel.filters_changed.connect(self._on_filters_changed)
         self.controls_panel.rois_changed.connect(self._on_rois_changed)
+        self.controls_panel.sub_anchors_changed.connect(self._on_sub_anchors_changed)
+        self.controls_panel.overlay_visibility_changed.connect(self._on_overlay_visibility_changed)
         self.controls_panel.labeler_toggled.connect(self._on_labeler_toggle)
         self.controls_panel.word_labeler_toggled.connect(self._on_word_labeler_toggle)
 
@@ -600,7 +653,42 @@ class MainWindow(QMainWindow):
 
     def _apply_profile_to_ui(self, profile: Profile) -> None:
         """Sync right-panel UI widgets to reflect the given profile's settings."""
+        is_multi = profile.uses_multi_anchor
+        self.controls_panel.roi_editor.multi_anchor = is_multi
+        self.controls_panel.roi_editor.sub_anchor_names = [
+            sa.name for sa in profile.sub_anchors
+        ]
         self.controls_panel.roi_editor.load_rois(profile.rois)
+
+        # Show/hide and load sub-anchor editor
+        self.controls_panel.sub_anchor_editor.setVisible(is_multi)
+        if is_multi:
+            anchors_dir = self._base_dir / "data" / "anchors"
+            self.controls_panel.sub_anchor_editor.anchors_dir = anchors_dir
+            self.controls_panel.sub_anchor_editor.load_sub_anchors(profile.sub_anchors)
+
+        # Toggle legacy vs multi-anchor UI visibility
+        self.controls_panel._legacy_anchor_group.setVisible(not is_multi)
+
+        if is_multi:
+            n_a = len(profile.anchors)
+            n_sa = len(profile.sub_anchors)
+            parts = [f"{n_a} anchors"]
+            if n_sa:
+                parts.append(f"{n_sa} sub-anchors")
+            self.controls_panel.multi_anchor_status.setText(
+                f"Multi-anchor: {', '.join(parts)}"
+            )
+            self.controls_panel.multi_anchor_status.setStyleSheet(
+                "color: green; font-size: 10px;"
+            )
+        else:
+            self.controls_panel.multi_anchor_status.setText(
+                "Multi-anchor: not configured"
+            )
+            self.controls_panel.multi_anchor_status.setStyleSheet(
+                "color: gray; font-size: 10px;"
+            )
 
         if profile.anchor_template_path:
             self.controls_panel.anchor_path_label.setText(profile.anchor_template_path)
@@ -753,6 +841,77 @@ class MainWindow(QMainWindow):
             pipeline._profile = profile
         self._update_anchor_roi_label({})
 
+    def _on_anchor_setup(self) -> None:
+        """Open the multi-anchor & ROI setup dialog on a captured frame."""
+        profile = self._editing_profile
+        pipeline = self._editing_pipeline
+        if not profile or not pipeline:
+            QMessageBox.warning(self, "No Profile", "Select a profile first.")
+            return
+
+        frame = pipeline.capture_engine.grab_single_frame()
+        if frame is None:
+            sr = profile.search_region
+            if sr.get("w", 0) > 0:
+                QMessageBox.information(
+                    self, "No Frame",
+                    "Start capture first (or click Start All) so a frame is available.",
+                )
+            else:
+                QMessageBox.warning(self, "No Region", "Set a search region first.")
+            return
+
+        anchors_dir = self._base_dir / "data" / "anchors"
+        dialog = AnchorSetupDialog(
+            frame,
+            anchors_dir,
+            existing_anchors=profile.anchors if profile.uses_multi_anchor else None,
+            existing_sub_anchors=profile.sub_anchors if profile.uses_multi_anchor else None,
+            existing_rois=profile.rois if profile.uses_multi_anchor else None,
+            parent=self,
+        )
+        if dialog.exec() != AnchorSetupDialog.DialogCode.Accepted:
+            return
+
+        new_anchors = dialog.get_anchors()
+        new_sub_anchors = dialog.get_sub_anchors()
+        new_rois = dialog.get_rois()
+
+        # Merge new ROIs with existing ones:
+        # Keep existing ROIs that aren't overwritten by name, add new ones
+        existing_by_name = {r.name: r for r in profile.rois}
+        merged_rois = []
+        seen_names = set()
+        for nroi in new_rois:
+            if nroi.name in existing_by_name:
+                # Update position but keep recognition settings
+                old = existing_by_name[nroi.name]
+                old.ref_x = nroi.ref_x
+                old.ref_y = nroi.ref_y
+                old.width = nroi.width
+                old.height = nroi.height
+                old.sub_anchor = nroi.sub_anchor
+                merged_rois.append(old)
+            else:
+                merged_rois.append(nroi)
+            seen_names.add(nroi.name)
+        # Append existing ROIs not touched by the dialog
+        for r in profile.rois:
+            if r.name not in seen_names:
+                merged_rois.append(r)
+
+        profile.anchors = new_anchors
+        profile.sub_anchors = new_sub_anchors
+        profile.rois = merged_rois
+
+        # Reload the pipeline with new anchor info
+        pipeline.load_profile(profile, self._base_dir)
+        self._apply_profile_to_ui(profile)
+        self.statusBar().showMessage(
+            f"Multi-anchor configured: {len(new_anchors)} anchors, "
+            f"{len(new_sub_anchors)} sub-anchors, {len(merged_rois)} ROIs"
+        )
+
     def _update_anchor_roi_label(self, roi: dict) -> None:
         if roi and all(k in roi for k in ("x", "y", "w", "h")):
             text = f"Anchor ROI: {roi['w']}x{roi['h']} at ({roi['x']}, {roi['y']})"
@@ -843,7 +1002,11 @@ class MainWindow(QMainWindow):
             profile = self._profiles[name]
             sr = profile.search_region
             has_region = sr.get("w", 0) > 0 and sr.get("h", 0) > 0
-            if pipeline.anchor_matcher.is_loaded and has_region:
+            has_anchor = (
+                profile.uses_multi_anchor
+                or pipeline.anchor_matcher.is_loaded
+            )
+            if has_anchor and has_region:
                 pipeline.reload_templates()
                 pipeline.start(self._fps)
                 started += 1
@@ -882,6 +1045,25 @@ class MainWindow(QMainWindow):
             # Also clean stale result labels
             self.controls_panel.remove_stale_results(prefix, active_keys)
 
+    def _on_sub_anchors_changed(self) -> None:
+        profile = self._editing_profile
+        pipeline = self._editing_pipeline
+        if profile:
+            profile.sub_anchors = self.controls_panel.sub_anchor_editor.sub_anchors
+            if pipeline:
+                pipeline._profile = profile
+                # Reload sub-anchor templates into the matcher
+                for sa in profile.sub_anchors:
+                    if sa.template_path:
+                        tpl_path = Path(__file__).parent.parent / "data" / "anchors" / sa.template_path
+                        if tpl_path.exists():
+                            pipeline.anchor_matcher.load_anchor_template(sa.name, str(tpl_path))
+
+    def _on_overlay_visibility_changed(self, visibility: dict) -> None:
+        """Update overlay visibility settings in all pipelines."""
+        for pipeline in self._pipelines.values():
+            pipeline.overlay_visibility = visibility
+
     # ── CNN Model ────────────────────────────────────────────────
 
     def _update_model_status(self) -> None:
@@ -912,7 +1094,7 @@ class MainWindow(QMainWindow):
         model_name = "model.pth"
         model_path = models_dir / model_name
 
-        char_classes = self._predictor.char_classes if self._predictor.is_loaded else "0123456789.-%"
+        char_classes = self._predictor.char_classes if self._predictor.is_loaded else "0123456789.-%empty"
         trainer = TrainerThread(
             data_dir=str(data_dir),
             output_model_path=str(model_path),
@@ -1012,14 +1194,10 @@ class MainWindow(QMainWindow):
         model_name = "word_model.pth"
         model_path = models_dir / model_name
 
-        existing_classes = (
-            self._word_predictor.word_classes
-            if self._word_predictor.is_loaded else None
-        )
         trainer = WordTrainerThread(
             data_dir=str(data_dir),
             output_model_path=str(model_path),
-            word_classes=existing_classes,
+            word_classes=None,  # Auto-discover from training_data folder
             parent=self,
         )
 
@@ -1429,6 +1607,10 @@ class MainWindow(QMainWindow):
                        if k not in ("timestamp", "_structured")}
         else:
             payload = {"values": self._staged_data["values"]}
+        
+        # Cast integer fields to int type
+        _apply_int_casting_to_dict(payload)
+        
         location = self._parse_location()
         capture = {
             "timestamp": self._staged_data["timestamp"],

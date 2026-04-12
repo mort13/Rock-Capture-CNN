@@ -44,8 +44,47 @@ class FilterSettings:
 
 
 @dataclass
+class AnchorPoint:
+    """A template-matched reference point for resolution-independent positioning."""
+    name: str
+    template_path: str = ""           # relative to data/anchors/
+    match_threshold: float = 0.7
+    ref_x: float = 0                   # expected x in the reference frame
+    ref_y: float = 0                   # expected y in the reference frame
+    search_region: dict | None = None  # {"x": x, "y": y, "width": w, "height": h} in ref frame
+
+    def to_dict(self) -> dict:
+        result = {
+            "name": self.name,
+            "template_path": self.template_path,
+            "match_threshold": self.match_threshold,
+            "ref_x": self.ref_x,
+            "ref_y": self.ref_y,
+        }
+        if self.search_region:
+            result["search_region"] = self.search_region
+        return result
+
+    @classmethod
+    def from_dict(cls, d: dict) -> AnchorPoint:
+        return cls(
+            name=d["name"],
+            template_path=d.get("template_path", ""),
+            match_threshold=d.get("match_threshold", 0.7),
+            ref_x=d.get("ref_x", 0),
+            ref_y=d.get("ref_y", 0),
+            search_region=d.get("search_region", None),
+        )
+
+
+@dataclass
 class ROIDefinition:
-    """A rectangular region defined relative to the anchor's top-left corner."""
+    """A rectangular region of interest.
+
+    Legacy mode (single anchor): positioned via *x_offset / y_offset* from anchor.
+    Multi-anchor mode: positioned via *ref_x / ref_y* in the reference frame,
+    optionally refined by a named *sub_anchor*.
+    """
     name: str
     x_offset: int = 0
     y_offset: int = 0
@@ -77,9 +116,15 @@ class ROIDefinition:
     template_dir: str = ""
     # Column order in the exported CSV. 0 = append after all explicitly-ordered columns.
     csv_index: int = 0
+    # --- Multi-anchor positioning fields ---
+    # Absolute position in the reference frame (used when Profile.uses_multi_anchor).
+    ref_x: float = 0.0
+    ref_y: float = 0.0
+    # Name of a sub-anchor for local refinement (empty = main transform only).
+    sub_anchor: str = ""
 
     def to_dict(self) -> dict:
-        return {
+        d = {
             "name": self.name,
             "x_offset": self.x_offset,
             "y_offset": self.y_offset,
@@ -97,9 +142,16 @@ class ROIDefinition:
             "template_dir": self.template_dir,
             "csv_index": self.csv_index,
         }
+        # Only write multi-anchor fields when they carry information
+        if self.ref_x or self.ref_y:
+            d["ref_x"] = self.ref_x
+            d["ref_y"] = self.ref_y
+        if self.sub_anchor:
+            d["sub_anchor"] = self.sub_anchor
+        return d
 
     @classmethod
-    def from_dict(cls, d: dict) -> "ROIDefinition":
+    def from_dict(cls, d: dict) -> ROIDefinition:
         return cls(
             name=d["name"],
             x_offset=d.get("x_offset", 0),
@@ -117,46 +169,85 @@ class ROIDefinition:
             recognition_mode=d.get("recognition_mode", "cnn"),
             template_dir=d.get("template_dir", ""),
             csv_index=d.get("csv_index", 0),
+            ref_x=d.get("ref_x", 0.0),
+            ref_y=d.get("ref_y", 0.0),
+            sub_anchor=d.get("sub_anchor", ""),
         )
 
 
 @dataclass
 class Profile:
-    """A named configuration: anchor template + ROIs + filter settings."""
+    """A named configuration: anchor(s) + ROIs + filter settings.
+
+    Supports two modes:
+    * **Legacy (single anchor):** one *anchor_template_path* + ROIs with
+      *x_offset / y_offset* pixel offsets.
+    * **Multi-anchor:** 2-3 *anchors* define a reference coordinate system.
+      An affine / similarity transform maps reference positions to the
+      current frame so that ROI placement is resolution-independent.
+      Optional *sub_anchors* provide local refinement.
+    """
     name: str
+    # --- Legacy single-anchor fields (kept for backward compat) ---
     anchor_template_path: str = ""
     anchor_match_threshold: float = 0.7
+    anchor_roi: dict = field(
+        default_factory=lambda: {}
+    )
+    # --- Common fields ---
     rois: list[ROIDefinition] = field(default_factory=list)
     search_region: dict = field(
         default_factory=lambda: {"x": 0, "y": 0, "w": 800, "h": 600}
     )
-    anchor_roi: dict = field(
-        default_factory=lambda: {}  # empty = search full frame; {"x":, "y":, "w":, "h":} relative to search_region
-    )
     monitor_index: int = 0
+    # --- Multi-anchor fields ---
+    anchors: list[AnchorPoint] = field(default_factory=list)
+    sub_anchors: list[AnchorPoint] = field(default_factory=list)
+
+    @property
+    def uses_multi_anchor(self) -> bool:
+        """True when the profile uses the new multi-anchor positioning."""
+        return len(self.anchors) >= 2
+
+    def get_sub_anchor(self, name: str) -> AnchorPoint | None:
+        for sa in self.sub_anchors:
+            if sa.name == name:
+                return sa
+        return None
 
     def to_dict(self) -> dict:
-        return {
+        d: dict = {
             "name": self.name,
-            "anchor_template_path": self.anchor_template_path,
-            "anchor_match_threshold": self.anchor_match_threshold,
             "rois": [r.to_dict() for r in self.rois],
             "search_region": self.search_region,
-            "anchor_roi": self.anchor_roi,
             "monitor_index": self.monitor_index,
         }
+        # Legacy fields
+        if self.anchor_template_path:
+            d["anchor_template_path"] = self.anchor_template_path
+        if self.anchor_match_threshold != 0.7:
+            d["anchor_match_threshold"] = self.anchor_match_threshold
+        if self.anchor_roi:
+            d["anchor_roi"] = self.anchor_roi
+        # Multi-anchor fields
+        if self.anchors:
+            d["anchors"] = [a.to_dict() for a in self.anchors]
+        if self.sub_anchors:
+            d["sub_anchors"] = [a.to_dict() for a in self.sub_anchors]
+        return d
 
     @classmethod
-    def from_dict(cls, d: dict) -> "Profile":
+    def from_dict(cls, d: dict) -> Profile:
         return cls(
             name=d["name"],
             anchor_template_path=d.get("anchor_template_path", ""),
             anchor_match_threshold=d.get("anchor_match_threshold", 0.7),
+            anchor_roi=d.get("anchor_roi", {}),
             rois=[ROIDefinition.from_dict(r) for r in d.get("rois", [])],
             search_region=d.get("search_region", {"x": 0, "y": 0, "w": 800, "h": 600}),
-            anchor_roi=d.get("anchor_roi", {}),
             monitor_index=d.get("monitor_index", 0),
-            # model_path and char_classes intentionally dropped — model is global, not per-profile
+            anchors=[AnchorPoint.from_dict(a) for a in d.get("anchors", [])],
+            sub_anchors=[AnchorPoint.from_dict(a) for a in d.get("sub_anchors", [])],
         )
 
     def save(self, profiles_dir: Path) -> None:

@@ -10,6 +10,30 @@ from torch.utils.data import Dataset
 from pathlib import Path
 
 
+def parse_char_classes(chars_str: str) -> list[str]:
+    """
+    Parse character class string into tokens, handling multi-character tokens.
+    
+    Multi-character tokens:
+    - "empty": represents empty fields
+    """
+    multi_char_tokens = {"empty"}
+    tokens = []
+    i = 0
+    while i < len(chars_str):
+        matched = False
+        for token in multi_char_tokens:
+            if chars_str[i:i+len(token)] == token:
+                tokens.append(token)
+                i += len(token)
+                matched = True
+                break
+        if not matched:
+            tokens.append(chars_str[i])
+            i += 1
+    return tokens
+
+
 class CharacterDataset(Dataset):
     """
     Loads character images from directory structure:
@@ -28,19 +52,21 @@ class CharacterDataset(Dataset):
         "-": "dash",
         "%": "percent",
         ",": "comma",
+        "empty": "empty",
     }
     DIR_CHAR_MAP = {v: k for k, v in CHAR_DIR_MAP.items()}
 
-    def __init__(self, data_dir: str | Path, char_classes: str = "0123456789.-%"):
+    def __init__(self, data_dir: str | Path, char_classes: str = "0123456789.-%empty"):
         self.data_dir = Path(data_dir)
-        self.char_classes = char_classes
-        self.class_to_idx = {c: i for i, c in enumerate(char_classes)}
+        # Parse char_classes to handle multi-char tokens like "empty"
+        self.char_list = parse_char_classes(char_classes)
+        self.class_to_idx = {c: i for i, c in enumerate(self.char_list)}
         self.samples: list[tuple[Path, int]] = []
         self._scan_directory()
 
     def _scan_directory(self) -> None:
         """Scan training_data directory and populate samples list."""
-        for char in self.char_classes:
+        for char in self.char_list:
             dir_name = self.CHAR_DIR_MAP.get(char, char)
             class_dir = self.data_dir / dir_name
             if not class_dir.exists():
@@ -64,7 +90,7 @@ class CharacterDataset(Dataset):
 
     def get_class_counts(self) -> dict[str, int]:
         """Return count of samples per class."""
-        counts = {c: 0 for c in self.char_classes}
+        counts = {c: 0 for c in self.char_list}
         for _, idx in self.samples:
-            counts[self.char_classes[idx]] += 1
+            counts[self.char_list[idx]] += 1
         return counts

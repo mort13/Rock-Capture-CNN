@@ -4,9 +4,9 @@ generate_synth_word_data.py
 Generates synthetic training data for the word CNN by compositing word
 templates from data/templates/ onto random background crops.
 
-Templates are greyscale JPGs with dark backgrounds — pixel brightness is
-used directly as the alpha channel (black = fully transparent, white = fully
-opaque), so no manual transparency work is needed beforehand.
+Templates can be either:
+  - Transparent PNG files (with alpha channel) — the transparency is used directly
+  - Greyscale images — pixel brightness is used as the alpha channel
 
 Output goes to data/word_training_data/{class_name}/synth_NNNNN.png.
 The WordDataset.resize_pad() call at train time handles the final 32×256
@@ -35,20 +35,30 @@ BG_DIR = "data/synth_data/backgrounds"
 OUTPUT_DIR = "data/word_training_data"
 
 
-def load_templates(template_dirs: list[Path]) -> dict[str, np.ndarray]:
+def load_templates(template_dirs: list[Path]) -> dict[str, dict]:
     """
-    Load all JPG/PNG templates from the given directories as greyscale.
-    If a class appears in multiple dirs, the first one wins.
-    Returns {class_name: grey_array}.
+    Load all JPG/PNG templates from the given directories.
+    Returns {class_name: {
+        'image': rgba_or_grey_array,
+        'has_alpha': bool
+    }}.
+    
+    Transparent PNGs are loaded with alpha channel (4 channels BGRA).
+    Greyscale images are loaded without alpha (will use brightness as alpha).
     """
-    templates: dict[str, np.ndarray] = {}
+    templates: dict[str, dict] = {}
     for d in template_dirs:
         for path in sorted(d.glob("*.jpg")) + sorted(d.glob("*.png")):
             name = path.stem
             if name not in templates:
-                img = cv2.imread(str(path), cv2.IMREAD_GRAYSCALE)
+                # Load with potential alpha channel
+                img = cv2.imread(str(path), cv2.IMREAD_UNCHANGED)
                 if img is not None:
-                    templates[name] = img
+                    has_alpha = img.ndim == 3 and img.shape[2] == 4
+                    templates[name] = {
+                        'image': img,
+                        'has_alpha': has_alpha
+                    }
     return templates
 
 
@@ -77,7 +87,7 @@ def random_crop(image: np.ndarray, h: int, w: int) -> np.ndarray:
 
 
 def composite(
-    template_grey: np.ndarray,
+    template_data: dict,
     bg_bgr: np.ndarray,
     scale_range: tuple[float, float] = (2.0, 3.5),
     pad_v: int = 4,
@@ -86,15 +96,33 @@ def composite(
     """
     Alpha-composite a word template over a background patch.
 
+    For transparent PNGs: uses the alpha channel directly.
+    For greyscale images: uses pixel brightness as alpha channel.
+
     Steps:
       1. Scale the template to a random height in scale_range × original height.
-      2. Use the greyscale pixel value as the alpha channel
-         (dark pixels become transparent, bright pixels become opaque).
+      2. Use alpha channel (for PNG) or greyscale brightness (for JPG) as transparency.
       3. Crop a background patch the same size as the padded template canvas.
-      4. Alpha-blend the white text over the background in greyscale.
+      4. Alpha-blend the text over the background in greyscale.
 
     Returns a greyscale uint8 image.
     """
+    template_img = template_data['image']
+    has_alpha = template_data['has_alpha']
+    
+    # Extract the image part (strip alpha if present)
+    if has_alpha:
+        template_bgr = template_img[:, :, :3]
+        template_grey = cv2.cvtColor(template_bgr, cv2.COLOR_BGR2GRAY)
+        alpha_channel = template_img[:, :, 3].astype(np.float32) / 255.0
+    else:
+        # For greyscale, convert to grey and use brightness as alpha
+        if template_img.ndim == 3:
+            template_grey = cv2.cvtColor(template_img, cv2.COLOR_BGR2GRAY)
+        else:
+            template_grey = template_img
+        alpha_channel = template_grey.astype(np.float32) / 255.0
+
     src_h, src_w = template_grey.shape
 
     # --- scale ---
@@ -102,6 +130,7 @@ def composite(
     new_h = max(4, round(src_h * scale))
     new_w = max(4, round(src_w * scale))
     resized = cv2.resize(template_grey, (new_w, new_h), interpolation=cv2.INTER_LINEAR)
+    alpha_resized = cv2.resize(alpha_channel, (new_w, new_h), interpolation=cv2.INTER_LINEAR)
 
     # --- canvas size ---
     canvas_h = new_h + 2 * pad_v
@@ -111,9 +140,6 @@ def composite(
     bg_crop = random_crop(bg_bgr, canvas_h, canvas_w)
     bg_grey = cv2.cvtColor(bg_crop, cv2.COLOR_BGR2GRAY).astype(np.float32)
 
-    # --- alpha from brightness: bright text = opaque, dark = transparent ---
-    alpha = resized.astype(np.float32) / 255.0  # [0, 1]
-
     # Place template into canvas with padding
     result = bg_grey.copy()
     y0, x0 = pad_v, pad_h
@@ -121,7 +147,7 @@ def composite(
 
     text_brightness = resized.astype(np.float32)
     result[y0:y1, x0:x1] = (
-        alpha * text_brightness + (1.0 - alpha) * bg_grey[y0:y1, x0:x1]
+        alpha_resized * text_brightness + (1.0 - alpha_resized) * bg_grey[y0:y1, x0:x1]
     )
 
     return np.clip(result, 0, 255).astype(np.uint8)
@@ -164,7 +190,7 @@ def next_synth_index(class_dir: Path) -> int:
 
 def generate_class(
     name: str,
-    template: np.ndarray,
+    template_data: dict,
     backgrounds: list[np.ndarray],
     class_dir: Path,
     n_samples: int,
@@ -173,10 +199,32 @@ def generate_class(
     class_dir.mkdir(parents=True, exist_ok=True)
     for i in range(n_samples):
         bg = random.choice(backgrounds)
-        img = composite(template, bg)
+        img = composite(template_data, bg)
         img = augment(img)
         cv2.imwrite(str(class_dir / f"synth_{start_index + i:05d}.png"), img)
     print(f"  {name:20s}  {n_samples} images  ->  {class_dir}")
+
+
+def generate_empty_class(
+    backgrounds: list[np.ndarray],
+    class_dir: Path,
+    n_samples: int,
+    start_index: int,
+    canvas_h: int = 40,
+    canvas_w: int = 200,
+) -> None:
+    """Generate empty field samples (background-only, no template)."""
+    class_dir.mkdir(parents=True, exist_ok=True)
+    for i in range(n_samples):
+        bg = random.choice(backgrounds)
+        # Crop a random patch from background (no template composited)
+        img = random_crop(bg, canvas_h, canvas_w)
+        # Convert to greyscale
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        # Apply augmentation
+        img = augment(img)
+        cv2.imwrite(str(class_dir / f"synth_{start_index + i:05d}.png"), img)
+    print(f"  {'empty':20s}  {n_samples} images  ->  {class_dir}")
 
 
 def main() -> None:
@@ -202,7 +250,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--classes", nargs="+", default=None,
-        help="Limit generation to specific class names (default: all templates)",
+        help="Limit generation to specific class names, or 'empty' for empty fields (default: all templates)",
     )
     parser.add_argument(
         "--append", action="store_true",
@@ -239,6 +287,13 @@ def main() -> None:
     print("-" * 60)
 
     for name in target_classes:
+        # Handle empty class specially
+        if name == 'empty':
+            class_dir = output_dir / 'empty'
+            start_index = next_synth_index(class_dir) if args.append else 0
+            generate_empty_class(backgrounds, class_dir, args.samples, start_index)
+            continue
+        
         if name not in templates:
             print(f"  {name:20s}  SKIP — no template found")
             continue

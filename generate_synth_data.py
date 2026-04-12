@@ -27,6 +27,7 @@ CHAR_DIR_MAP = {
     "-": "dash",
     "%": "percent",
     ",": "comma",
+    "empty": "empty",
 }
 
 # Maps template filename stems to character
@@ -34,6 +35,7 @@ TEMPLATE_FILES = {
     "0": "0.png", "1": "1.png", "2": "2.png", "3": "3.png", "4": "4.png",
     "5": "5.png", "6": "6.png", "7": "7.png", "8": "8.png", "9": "9.png",
     ".": "dot.png", "%": "percent.png", "-": "dash.png", ",": "comma.png",
+    "empty": "empty.png",  # optional template for blank samples (not a char)
 }
 
 
@@ -168,6 +170,40 @@ def next_synth_index(class_dir: Path) -> int:
     return (max(indices) + 1) if indices else 0
 
 
+def parse_char_classes(chars_str: str) -> list[str]:
+    """
+    Parse a character class string into tokens, handling multi-character tokens.
+    
+    Examples:
+        "0123456789" -> ['0', '1', ..., '9']
+        "empty" -> ['empty']
+        "0123456789.-%empty" -> ['0', '1', ..., '9', '.', '-', '%', 'empty']
+    
+    Multi-character tokens must be predefined in CHAR_DIR_MAP or be literal "empty".
+    """
+    # Known multi-character tokens
+    multi_char_tokens = {"empty"}
+    
+    tokens = []
+    i = 0
+    while i < len(chars_str):
+        # Check for multi-character token matches
+        matched = False
+        for token in multi_char_tokens:
+            if chars_str[i:i+len(token)] == token:
+                tokens.append(token)
+                i += len(token)
+                matched = True
+                break
+        
+        # If no multi-character token matched, consume single character
+        if not matched:
+            tokens.append(chars_str[i])
+            i += 1
+    
+    return tokens
+
+
 def generate_class(
     char: str,
     digit_bgra: np.ndarray,
@@ -184,6 +220,26 @@ def generate_class(
         filename = f"synth_{start_index + i:05d}.png"
         cv2.imwrite(str(output_dir / filename), img)
     print(f"  [{char!r:>3}]  {n_samples} images  ->  {output_dir}")
+
+
+def generate_empty_class(
+    backgrounds: list[np.ndarray],
+    output_dir: Path,
+    n_samples: int,
+    start_index: int = 0,
+    target_size: int = 28,
+) -> None:
+    """Generate empty field samples (background-only, no digit)."""
+    output_dir.mkdir(parents=True, exist_ok=True)
+    for i in range(n_samples):
+        bg = random.choice(backgrounds)
+        img = random_crop(bg, target_size)
+        # Convert BGR to grayscale
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        img = augment(img)
+        filename = f"synth_{start_index + i:05d}.png"
+        cv2.imwrite(str(output_dir / filename), img)
+    print(f"  ['empty']  {n_samples} images  ->  {output_dir}")
 
 
 def main() -> None:
@@ -238,8 +294,19 @@ def main() -> None:
     print(f"\nGenerating {args.samples} samples per class for chars: {args.chars!r}")
     print("-" * 60)
 
+    # Parse char_classes to handle multi-character tokens like "empty"
+    char_list = parse_char_classes(args.chars)
+    
     missing = []
-    for char in args.chars:
+    for char in char_list:
+        # Handle empty class specially
+        if char == 'empty':
+            dir_name = CHAR_DIR_MAP.get(char, char)
+            class_dir = output_dir / dir_name
+            start_index = next_synth_index(class_dir) if args.append else 0
+            generate_empty_class(backgrounds, class_dir, args.samples, start_index)
+            continue
+        
         if char not in templates:
             missing.append(char)
             print(f"  [{char!r:>3}]  SKIP — no template PNG found")

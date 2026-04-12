@@ -1,0 +1,40 @@
+{
+  "numClasses": 27,
+  "inputShape": [
+    1,
+    1,
+    32,
+    256
+  ],
+  "valAccuracy": 0.9988951632703167,
+  "charClasses": "",
+  "wordClasses": [
+    "agricium",
+    "aphorite",
+    "aslarite",
+    "beryl",
+    "bexalite",
+    "borase",
+    "copper",
+    "dolivine",
+    "empty",
+    "feynmaline",
+    "gold",
+    "hadanite",
+    "hephaestanite",
+    "ice",
+    "inert_materials",
+    "iron",
+    "laranite",
+    "lindinium",
+    "quartz",
+    "riccite",
+    "silicon",
+    "stileron",
+    "taranite",
+    "tin",
+    "titanium",
+    "torite",
+    "tungsten"
+  ]
+}

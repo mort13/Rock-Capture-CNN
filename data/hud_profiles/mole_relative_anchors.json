@@ -26,7 +26,7 @@
           "format_pattern": "",
           "dot_width": 0,
           "enabled": true,
-          "recognition_mode": "cnn",
+          "recognition_mode": "digit_crnn",
           "template_dir": "",
           "csv_index": 0,
           "ref_x": 123.0,
@@ -36,8 +36,8 @@
           "name": "material1",
           "x_offset": 0,
           "y_offset": 0,
-          "width": 117,
-          "height": 16,
+          "width": 118,
+          "height": 17,
           "filters": {
             "brightness": 0,
             "contrast": 0,
@@ -58,13 +58,13 @@
           "template_dir": "",
           "csv_index": 0,
           "ref_x": 66.0,
-          "ref_y": 232.0
+          "ref_y": 234.0
         },
         {
           "name": "qual1",
           "x_offset": 0,
           "y_offset": 0,
-          "width": 25,
+          "width": 27,
           "height": 17,
           "filters": {
             "brightness": 0,
@@ -82,7 +82,7 @@
           "format_pattern": "",
           "dot_width": 0,
           "enabled": true,
-          "recognition_mode": "cnn",
+          "recognition_mode": "digit_crnn",
           "template_dir": "",
           "csv_index": 0,
           "ref_x": 191.0,
@@ -93,7 +93,7 @@
           "x_offset": 0,
           "y_offset": 0,
           "width": 118,
-          "height": 16,
+          "height": 17,
           "filters": {
             "brightness": 0,
             "contrast": 0,
@@ -120,7 +120,7 @@
           "name": "qual2",
           "x_offset": 0,
           "y_offset": 0,
-          "width": 25,
+          "width": 27,
           "height": 17,
           "filters": {
             "brightness": 0,
@@ -138,7 +138,7 @@
           "format_pattern": "",
           "dot_width": 0,
           "enabled": true,
-          "recognition_mode": "cnn",
+          "recognition_mode": "digit_crnn",
           "template_dir": "",
           "csv_index": 0,
           "ref_x": 191.0,
@@ -149,7 +149,7 @@
           "x_offset": 0,
           "y_offset": 0,
           "width": 118,
-          "height": 18,
+          "height": 17,
           "filters": {
             "brightness": 0,
             "contrast": 0,
@@ -170,13 +170,13 @@
           "template_dir": "",
           "csv_index": 0,
           "ref_x": 66.0,
-          "ref_y": 272.0
+          "ref_y": 271.0
         },
         {
           "name": "qual3",
           "x_offset": 0,
           "y_offset": 0,
-          "width": 25,
+          "width": 27,
           "height": 17,
           "filters": {
             "brightness": 0,
@@ -194,7 +194,7 @@
           "format_pattern": "",
           "dot_width": 0,
           "enabled": true,
-          "recognition_mode": "cnn",
+          "recognition_mode": "digit_crnn",
           "template_dir": "",
           "csv_index": 0,
           "ref_x": 191.0,
@@ -232,7 +232,7 @@
           "name": "resistance",
           "x_offset": 0,
           "y_offset": 0,
-          "width": 17,
+          "width": 34,
           "height": 17,
           "filters": {
             "brightness": 0,
@@ -243,25 +243,24 @@
             "invert": false,
             "channel": "none"
           },
-          "seg_mode": "fixed_width",
+          "seg_mode": "projection",
           "char_width": 0,
           "char_count": 2,
           "allowed_chars": "1234567890",
           "format_pattern": "",
           "dot_width": 0,
           "enabled": true,
-          "recognition_mode": "cnn",
+          "recognition_mode": "digit_crnn",
           "template_dir": "",
           "csv_index": 0,
-          "ref_x": 115.0,
-          "ref_y": 100.0,
-          "sub_anchor": "resistance_anchor"
+          "ref_x": 122.0,
+          "ref_y": 101.0
         },
         {
-          "name": "inst_int",
+          "name": "inst",
           "x_offset": 0,
           "y_offset": 0,
-          "width": 25,
+          "width": 60,
           "height": 17,
           "filters": {
             "brightness": 0,
@@ -279,18 +278,17 @@
           "format_pattern": "",
           "dot_width": 0,
           "enabled": true,
-          "recognition_mode": "cnn",
+          "recognition_mode": "digit_crnn",
           "template_dir": "",
           "csv_index": 0,
           "ref_x": 121.0,
-          "ref_y": 123.0,
-          "sub_anchor": "instability_anchor"
+          "ref_y": 126.0
         },
         {
-          "name": "inst_dec",
+          "name": "material4",
           "x_offset": 0,
           "y_offset": 0,
-          "width": 17,
+          "width": 118,
           "height": 17,
           "filters": {
             "brightness": 0,
@@ -301,35 +299,6 @@
             "invert": false,
             "channel": "none"
           },
-          "seg_mode": "fixed_width",
-          "char_width": 0,
-          "char_count": 2,
-          "allowed_chars": "1234567890",
-          "format_pattern": "",
-          "dot_width": 0,
-          "enabled": true,
-          "recognition_mode": "cnn",
-          "template_dir": "",
-          "csv_index": 0,
-          "ref_x": 149.0,
-          "ref_y": 124.0,
-          "sub_anchor": "instability_anchor"
-        },
-        {
-          "name": "material4",
-          "x_offset": 0,
-          "y_offset": 0,
-          "width": 118,
-          "height": 19,
-          "filters": {
-            "brightness": 0,
-            "contrast": 0,
-            "threshold": 127,
-            "threshold_enabled": false,
-            "grayscale": true,
-            "invert": false,
-            "channel": "none"
-          },
           "seg_mode": "projection",
           "char_width": 0,
           "char_count": 0,
@@ -341,14 +310,14 @@
           "template_dir": "",
           "csv_index": 0,
           "ref_x": 66.0,
-          "ref_y": 290.0
+          "ref_y": 289.0
         },
         {
           "name": "material5",
           "x_offset": 0,
           "y_offset": 0,
           "width": 118,
-          "height": 18,
+          "height": 17,
           "filters": {
             "brightness": 0,
             "contrast": 0,
@@ -369,13 +338,13 @@
           "template_dir": "",
           "csv_index": 0,
           "ref_x": 66.0,
-          "ref_y": 308.0
+          "ref_y": 307.0
         },
         {
           "name": "qual4",
           "x_offset": 0,
           "y_offset": 0,
-          "width": 25,
+          "width": 27,
           "height": 17,
           "filters": {
             "brightness": 0,
@@ -393,7 +362,7 @@
           "format_pattern": "",
           "dot_width": 0,
           "enabled": true,
-          "recognition_mode": "cnn",
+          "recognition_mode": "digit_crnn",
           "template_dir": "",
           "csv_index": 0,
           "ref_x": 191.0,
@@ -403,7 +372,7 @@
           "name": "qual5",
           "x_offset": 0,
           "y_offset": 0,
-          "width": 25,
+          "width": 27,
           "height": 17,
           "filters": {
             "brightness": 0,
@@ -421,17 +390,17 @@
           "format_pattern": "",
           "dot_width": 0,
           "enabled": true,
-          "recognition_mode": "cnn",
+          "recognition_mode": "digit_crnn",
           "template_dir": "",
           "csv_index": 0,
           "ref_x": 191.0,
           "ref_y": 310.0
         },
         {
-          "name": "amount1_int",
+          "name": "amount1",
           "x_offset": 0,
           "y_offset": 0,
-          "width": 17,
+          "width": 52,
           "height": 17,
           "filters": {
             "brightness": 0,
@@ -442,54 +411,24 @@
             "invert": false,
             "channel": "none"
           },
-          "seg_mode": "fixed_width",
+          "seg_mode": "projection",
           "char_width": 0,
           "char_count": 2,
           "allowed_chars": "1234567890",
-          "format_pattern": "",
+          "format_pattern": "{1,2}.{2}%",
           "dot_width": 0,
           "enabled": true,
-          "recognition_mode": "cnn",
+          "recognition_mode": "digit_crnn",
           "template_dir": "",
           "csv_index": 0,
-          "ref_x": 4.0,
-          "ref_y": 236.0,
-          "sub_anchor": "perc1"
+          "ref_x": 11.0,
+          "ref_y": 235.0
         },
         {
-          "name": "amount1_dec",
+          "name": "amount2",
           "x_offset": 0,
           "y_offset": 0,
-          "width": 16,
-          "height": 19,
-          "filters": {
-            "brightness": 0,
-            "contrast": 0,
-            "threshold": 127,
-            "threshold_enabled": false,
-            "grayscale": true,
-            "invert": false,
-            "channel": "none"
-          },
-          "seg_mode": "fixed_width",
-          "char_width": 0,
-          "char_count": 2,
-          "allowed_chars": "1234567890",
-          "format_pattern": "",
-          "dot_width": 0,
-          "enabled": true,
-          "recognition_mode": "cnn",
-          "template_dir": "",
-          "csv_index": 0,
-          "ref_x": 25.0,
-          "ref_y": 233.0,
-          "sub_anchor": "perc1"
-        },
-        {
-          "name": "amount2_int",
-          "x_offset": 0,
-          "y_offset": 0,
-          "width": 17,
+          "width": 52,
           "height": 17,
           "filters": {
             "brightness": 0,
@@ -507,18 +446,17 @@
           "format_pattern": "",
           "dot_width": 0,
           "enabled": true,
-          "recognition_mode": "cnn",
+          "recognition_mode": "digit_crnn",
           "template_dir": "",
           "csv_index": 0,
-          "ref_x": 5.0,
-          "ref_y": 253.0,
-          "sub_anchor": "perc2"
+          "ref_x": 11.0,
+          "ref_y": 253.0
         },
         {
-          "name": "amount2_dec",
+          "name": "amount3",
           "x_offset": 0,
           "y_offset": 0,
-          "width": 17,
+          "width": 52,
           "height": 17,
           "filters": {
             "brightness": 0,
@@ -536,18 +474,17 @@
           "format_pattern": "",
           "dot_width": 0,
           "enabled": true,
-          "recognition_mode": "cnn",
+          "recognition_mode": "digit_crnn",
           "template_dir": "",
           "csv_index": 0,
-          "ref_x": 25.0,
-          "ref_y": 254.0,
-          "sub_anchor": "perc2"
+          "ref_x": 11.0,
+          "ref_y": 271.0
         },
         {
-          "name": "amount3_int",
+          "name": "amount4",
           "x_offset": 0,
           "y_offset": 0,
-          "width": 17,
+          "width": 52,
           "height": 17,
           "filters": {
             "brightness": 0,
@@ -565,18 +502,18 @@
           "format_pattern": "",
           "dot_width": 0,
           "enabled": true,
-          "recognition_mode": "cnn",
+          "recognition_mode": "digit_crnn",
           "template_dir": "",
           "csv_index": 0,
-          "ref_x": 13.0,
-          "ref_y": 271.0,
-          "sub_anchor": "perc3"
+          "ref_x": 12.0,
+          "ref_y": 287.0,
+          "sub_anchor": "resistance_anchor"
         },
         {
-          "name": "amount3_dec",
+          "name": "amount5",
           "x_offset": 0,
           "y_offset": 0,
-          "width": 17,
+          "width": 52,
           "height": 17,
           "filters": {
             "brightness": 0,
@@ -594,134 +531,17 @@
           "format_pattern": "",
           "dot_width": 0,
           "enabled": true,
-          "recognition_mode": "cnn",
+          "recognition_mode": "digit_crnn",
           "template_dir": "",
           "csv_index": 0,
-          "ref_x": 33.0,
-          "ref_y": 271.0,
-          "sub_anchor": "perc3"
+          "ref_x": 11.0,
+          "ref_y": 307.0
         },
         {
-          "name": "amount4_int",
+          "name": "volume",
           "x_offset": 0,
           "y_offset": 0,
-          "width": 17,
-          "height": 17,
-          "filters": {
-            "brightness": 0,
-            "contrast": 0,
-            "threshold": 127,
-            "threshold_enabled": false,
-            "grayscale": true,
-            "invert": false,
-            "channel": "none"
-          },
-          "seg_mode": "fixed_width",
-          "char_width": 0,
-          "char_count": 2,
-          "allowed_chars": "1234567890",
-          "format_pattern": "",
-          "dot_width": 0,
-          "enabled": true,
-          "recognition_mode": "cnn",
-          "template_dir": "",
-          "csv_index": 0,
-          "ref_x": 4.0,
-          "ref_y": 290.0,
-          "sub_anchor": "perc4"
-        },
-        {
-          "name": "amount4_dec",
-          "x_offset": 0,
-          "y_offset": 0,
-          "width": 17,
-          "height": 17,
-          "filters": {
-            "brightness": 0,
-            "contrast": 0,
-            "threshold": 127,
-            "threshold_enabled": false,
-            "grayscale": true,
-            "invert": false,
-            "channel": "none"
-          },
-          "seg_mode": "fixed_width",
-          "char_width": 0,
-          "char_count": 2,
-          "allowed_chars": "1234567890",
-          "format_pattern": "",
-          "dot_width": 0,
-          "enabled": true,
-          "recognition_mode": "cnn",
-          "template_dir": "",
-          "csv_index": 0,
-          "ref_x": 25.0,
-          "ref_y": 292.0,
-          "sub_anchor": "perc4"
-        },
-        {
-          "name": "amount5_int",
-          "x_offset": 0,
-          "y_offset": 0,
-          "width": 17,
-          "height": 17,
-          "filters": {
-            "brightness": 0,
-            "contrast": 0,
-            "threshold": 127,
-            "threshold_enabled": false,
-            "grayscale": true,
-            "invert": false,
-            "channel": "none"
-          },
-          "seg_mode": "fixed_width",
-          "char_width": 0,
-          "char_count": 2,
-          "allowed_chars": "1234567890",
-          "format_pattern": "",
-          "dot_width": 0,
-          "enabled": true,
-          "recognition_mode": "cnn",
-          "template_dir": "",
-          "csv_index": 0,
-          "ref_x": 4.0,
-          "ref_y": 307.0,
-          "sub_anchor": "perc5"
-        },
-        {
-          "name": "amount5_dec",
-          "x_offset": 0,
-          "y_offset": 0,
-          "width": 17,
-          "height": 17,
-          "filters": {
-            "brightness": 0,
-            "contrast": 0,
-            "threshold": 127,
-            "threshold_enabled": false,
-            "grayscale": true,
-            "invert": false,
-            "channel": "none"
-          },
-          "seg_mode": "fixed_width",
-          "char_width": 0,
-          "char_count": 2,
-          "allowed_chars": "1234567890",
-          "format_pattern": "",
-          "dot_width": 0,
-          "enabled": true,
-          "recognition_mode": "cnn",
-          "template_dir": "",
-          "csv_index": 0,
-          "ref_x": 25.0,
-          "ref_y": 309.0,
-          "sub_anchor": "perc5"
-        },
-        {
-          "name": "volume_int",
-          "x_offset": 0,
-          "y_offset": 0,
-          "width": 24,
+          "width": 46,
           "height": 17,
           "filters": {
             "brightness": 0,
@@ -739,39 +559,11 @@
           "format_pattern": "",
           "dot_width": 0,
           "enabled": true,
-          "recognition_mode": "cnn",
+          "recognition_mode": "digit_crnn",
           "template_dir": "",
           "csv_index": 0,
           "ref_x": 145.0,
           "ref_y": 190.0
-        },
-        {
-          "name": "volume_dec",
-          "x_offset": 0,
-          "y_offset": 0,
-          "width": 18,
-          "height": 17,
-          "filters": {
-            "brightness": 6,
-            "contrast": 0,
-            "threshold": 100,
-            "threshold_enabled": false,
-            "grayscale": true,
-            "invert": false,
-            "channel": "none"
-          },
-          "seg_mode": "fixed_width",
-          "char_width": 0,
-          "char_count": 2,
-          "allowed_chars": "1234567890",
-          "format_pattern": "",
-          "dot_width": 0,
-          "enabled": true,
-          "recognition_mode": "cnn",
-          "template_dir": "",
-          "csv_index": 0,
-          "ref_x": 172.0,
-          "ref_y": 189.0
         }
       ],
       "search_region": {
@@ -803,99 +595,6 @@
           "ref_x": 180.0,
           "ref_y": 436.0
         }
-      ],
-      "sub_anchors": [
-        {
-          "name": "resistance_anchor",
-          "template_path": "resistance_anchor.png",
-          "match_threshold": 0.7,
-          "ref_x": 133.0,
-          "ref_y": 100.0,
-          "search_region": {
-            "x": 126,
-            "y": 102,
-            "width": 30,
-            "height": 20
-          }
-        },
-        {
-          "name": "instability_anchor",
-          "template_path": "instability_anchor.png",
-          "match_threshold": 0.7,
-          "ref_x": 146.0,
-          "ref_y": 123.0,
-          "search_region": {
-            "x": 130,
-            "y": 124,
-            "width": 25,
-            "height": 20
-          }
-        },
-        {
-          "name": "perc1",
-          "template_path": "perc1.png",
-          "match_threshold": 0.7,
-          "ref_x": 38.0,
-          "ref_y": 226.0,
-          "search_region": {
-            "x": 41,
-            "y": 236,
-            "width": 27,
-            "height": 14
-          }
-        },
-        {
-          "name": "perc2",
-          "template_path": "percentage2.jpg",
-          "match_threshold": 0.7,
-          "ref_x": 37.0,
-          "ref_y": 250.0,
-          "search_region": {
-            "x": 41,
-            "y": 255,
-            "width": 27,
-            "height": 14
-          }
-        },
-        {
-          "name": "perc3",
-          "template_path": "percentage2.jpg",
-          "match_threshold": 0.7,
-          "ref_x": 46.0,
-          "ref_y": 265.0,
-          "search_region": {
-            "x": 41,
-            "y": 273,
-            "width": 27,
-            "height": 14
-          }
-        },
-        {
-          "name": "perc4",
-          "template_path": "percentage2.jpg",
-          "match_threshold": 0.7,
-          "ref_x": 38.0,
-          "ref_y": 285.0,
-          "search_region": {
-            "x": 41,
-            "y": 291,
-            "width": 27,
-            "height": 14
-          }
-        },
-        {
-          "name": "perc5",
-          "template_path": "percentage2.jpg",
-          "match_threshold": 0.7,
-          "ref_x": 52.0,
-          "ref_y": 305.0,
-          "search_region": {
-            "x": 41,
-            "y": 310,
-            "width": 27,
-            "height": 14
-          }
-        }
       ]
     }
   },
@@ -921,13 +620,13 @@
         },
         {
           "profile": "scan_results",
-          "roi": "inst_int",
-          "key": "instability_int"
+          "roi": "inst",
+          "key": "instability"
         },
         {
           "profile": "scan_results",
-          "roi": "inst_dec",
-          "key": "instability_dec"
+          "roi": "volume",
+          "key": "volume"
         },
         {
           "key": "composition",
@@ -944,13 +643,8 @@
                 },
                 {
                   "profile": "scan_results",
-                  "roi": "amount1_int",
-                  "key": "amount_int"
-                },
-                {
-                  "profile": "scan_results",
-                  "roi": "amount1_dec",
-                  "key": "amount_dec"
+                  "roi": "amount1",
+                  "key": "amount"
                 },
                 {
                   "profile": "scan_results",
@@ -970,13 +664,8 @@
                 },
                 {
                   "profile": "scan_results",
-                  "roi": "amount2_int",
-                  "key": "amount_int"
-                },
-                {
-                  "profile": "scan_results",
-                  "roi": "amount2_dec",
-                  "key": "amount_dec"
+                  "roi": "amount2",
+                  "key": "amount"
                 },
                 {
                   "profile": "scan_results",
@@ -996,13 +685,8 @@
                 },
                 {
                   "profile": "scan_results",
-                  "roi": "amount3_int",
-                  "key": "amount_int"
-                },
-                {
-                  "profile": "scan_results",
-                  "roi": "amount3_dec",
-                  "key": "amount_dec"
+                  "roi": "amount3",
+                  "key": "amount"
                 },
                 {
                   "profile": "scan_results",
@@ -1022,13 +706,8 @@
                 },
                 {
                   "profile": "scan_results",
-                  "roi": "amount4_int",
-                  "key": "amount_int"
-                },
-                {
-                  "profile": "scan_results",
-                  "roi": "amount4_dec",
-                  "key": "amount_dec"
+                  "roi": "amount4",
+                  "key": "amount"
                 },
                 {
                   "profile": "scan_results",
@@ -1047,13 +726,8 @@
                 },
                 {
                   "profile": "scan_results",
-                  "roi": "amount5_int",
-                  "key": "amount_int"
-                },
-                {
-                  "profile": "scan_results",
-                  "roi": "amount5_dec",
-                  "key": "amount_dec"
+                  "roi": "amount5",
+                  "key": "amount"
                 },
                 {
                   "profile": "scan_results",

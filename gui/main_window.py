@@ -87,7 +87,7 @@ def _apply_int_casting_to_dict(data: dict, parent_key: str = "") -> None:
 class MainWindow(QMainWindow):
     """Top-level application window for Rock Capture CNN."""
 
-    def __init__(self):
+    def __init__(self, crnn_predictor=None):
         super().__init__()
         self.setWindowTitle("Rock Capture CNN")
         self.setGeometry(100, 100, 1400, 900)
@@ -96,7 +96,7 @@ class MainWindow(QMainWindow):
         self._hud_profiles_dir = self._base_dir / "data" / "hud_profiles"
         self._predictor = Predictor()
         self._word_predictor = WordPredictor()
-        self._crnn_predictor = CRNNPredictor()
+        self._crnn_predictor = crnn_predictor if crnn_predictor is not None else CRNNPredictor()
         self._pipelines: dict[str, RecognitionPipeline] = {}
         self._profiles: dict[str, Profile] = {}
         self._editing_profile_name: str | None = None
@@ -635,7 +635,12 @@ class MainWindow(QMainWindow):
 
         # Auto-load CRNN model
         if not self._crnn_predictor.is_loaded:
-            crnn_model_path = self._base_dir / "data" / "models" / "crnn_model.pth"
+            # Try ONNX model first if that predictor type, otherwise PyTorch
+            from digit_crnn.onnx_predictor import CRNNOnnxPredictor
+            if isinstance(self._crnn_predictor, CRNNOnnxPredictor):
+                crnn_model_path = self._base_dir / "data" / "models" / "crnn_model.onnx"
+            else:
+                crnn_model_path = self._base_dir / "data" / "models" / "crnn_model.pth"
             if crnn_model_path.exists():
                 if self._crnn_predictor.load_model(str(crnn_model_path)):
                     self._crnn_model_path = crnn_model_path.name
@@ -1172,8 +1177,13 @@ class MainWindow(QMainWindow):
     def _on_load_crnn_model(self) -> None:
         models_dir = self._base_dir / "data" / "models"
         models_dir.mkdir(parents=True, exist_ok=True)
+        from digit_crnn.onnx_predictor import CRNNOnnxPredictor
+        if isinstance(self._crnn_predictor, CRNNOnnxPredictor):
+            file_filter = "ONNX Models (*.onnx)"
+        else:
+            file_filter = "PyTorch Models (*.pth)"
         path, _ = QFileDialog.getOpenFileName(
-            self, "Load CRNN Model", str(models_dir), "PyTorch Models (*.pth)"
+            self, "Load CRNN Model", str(models_dir), file_filter
         )
         if path:
             if self._crnn_predictor.load_model(path):

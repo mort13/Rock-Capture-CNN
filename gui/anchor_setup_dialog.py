@@ -20,7 +20,7 @@ from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QListWidget, QListWidgetItem, QDialogButtonBox, QRadioButton,
     QButtonGroup, QGroupBox, QMessageBox, QLineEdit, QFormLayout,
-    QSplitter, QWidget, QComboBox,
+    QSplitter, QWidget, QComboBox, QFileDialog,
 )
 from PyQt6.QtCore import Qt, QPoint, QRect
 from PyQt6.QtGui import QPainter, QPen, QColor, QPixmap, QMouseEvent, QFont
@@ -48,15 +48,17 @@ _COLORS = {
 
 class _PlacedItem:
     """Internal representation of an item drawn on the frame."""
-    __slots__ = ("mode", "name", "rect", "sub_anchor_name", "search_region")
+    __slots__ = ("mode", "name", "rect", "sub_anchor_name", "search_region", "template_path")
 
     def __init__(self, mode: PlacementMode, name: str, rect: QRect,
-                 sub_anchor_name: str = "", search_region: dict | None = None):
+                 sub_anchor_name: str = "", search_region: dict | None = None,
+                 template_path: str = ""):
         self.mode = mode
         self.name = name
         self.rect = rect  # in *frame* coordinates
         self.sub_anchor_name = sub_anchor_name  # only for ROI mode
         self.search_region = search_region or {}  # search region dict for SUB_ANCHOR items
+        self.template_path = template_path  # filename relative to anchors_dir
 
 
 class FrameCanvas(QLabel):
@@ -243,6 +245,23 @@ class AnchorSetupDialog(QDialog):
         self._name_edit.setPlaceholderText("e.g. anchor_top_left")
         entry_layout.addRow("Name:", self._name_edit)
 
+        # Template PNG picker (anchor / sub-anchor modes only)
+        tpl_row = QHBoxLayout()
+        self._template_edit = QLineEdit()
+        self._template_edit.setPlaceholderText("auto (crop from drawn rect)")
+        self._template_edit.setReadOnly(True)
+        tpl_row.addWidget(self._template_edit)
+        self._template_browse_btn = QPushButton("Browse…")
+        self._template_browse_btn.clicked.connect(self._on_browse_template)
+        tpl_row.addWidget(self._template_browse_btn)
+        self._template_clear_btn = QPushButton("✕")
+        self._template_clear_btn.setFixedWidth(28)
+        self._template_clear_btn.setToolTip("Clear – crop from drawn rect")
+        self._template_clear_btn.clicked.connect(lambda: self._template_edit.clear())
+        tpl_row.addWidget(self._template_clear_btn)
+        self._template_row_label = QLabel("Template PNG:")
+        entry_layout.addRow(self._template_row_label, tpl_row)
+
         self._sub_anchor_combo = QComboBox()
         self._sub_anchor_combo.addItem("(none – use main transform)")
         self._sub_anchor_combo_label = QLabel("Relative to:")
@@ -270,7 +289,24 @@ class AnchorSetupDialog(QDialog):
 
         # Items list
         self._items_list = QListWidget()
+        self._items_list.currentRowChanged.connect(self._on_list_selection_changed)
         right.addWidget(self._items_list)
+
+        # Per-item template editor (shown only when an anchor/sub-anchor is selected)
+        self._item_tpl_group = QGroupBox("Selected item – Template PNG")
+        item_tpl_layout = QHBoxLayout(self._item_tpl_group)
+        self._item_tpl_label = QLabel("(none)")
+        self._item_tpl_label.setStyleSheet("color: #aaa; font-size: 10px;")
+        item_tpl_layout.addWidget(self._item_tpl_label, stretch=1)
+        self._item_tpl_change_btn = QPushButton("Change…")
+        self._item_tpl_change_btn.clicked.connect(self._on_change_template)
+        item_tpl_layout.addWidget(self._item_tpl_change_btn)
+        self._item_tpl_crop_btn = QPushButton("Re-crop")
+        self._item_tpl_crop_btn.setToolTip("Save the current drawn rect as this anchor's template")
+        self._item_tpl_crop_btn.clicked.connect(self._on_recrop_template)
+        item_tpl_layout.addWidget(self._item_tpl_crop_btn)
+        self._item_tpl_group.setVisible(False)
+        right.addWidget(self._item_tpl_group)
 
         # Status
         self._status_label = QLabel("")
@@ -303,10 +339,29 @@ class AnchorSetupDialog(QDialog):
         self.canvas.current_mode = mode
         is_roi = mode == PlacementMode.ROI
         is_search = mode == PlacementMode.SEARCH_REGION
+        is_anchor = mode in (PlacementMode.ANCHOR, PlacementMode.SUB_ANCHOR)
         self._sub_anchor_combo.setVisible(is_roi)
         self._sub_anchor_combo_label.setVisible(is_roi)
         self._search_region_target_combo.setVisible(is_search)
         self._search_region_target_label.setVisible(is_search)
+        self._template_row_label.setVisible(is_anchor)
+        self._template_edit.setVisible(is_anchor)
+        self._template_browse_btn.setVisible(is_anchor)
+        self._template_clear_btn.setVisible(is_anchor)
+
+    def _on_browse_template(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Select Anchor Template PNG",
+            str(self._anchors_dir),
+            "Images (*.png *.jpg *.bmp)",
+        )
+        if path:
+            # Store just the filename if it's already in anchors_dir, else the full path
+            p = Path(path)
+            if p.parent.resolve() == self._anchors_dir.resolve():
+                self._template_edit.setText(p.name)
+            else:
+                self._template_edit.setText(str(p))
 
     def _current_mode(self) -> PlacementMode:
         return PlacementMode(self._mode_btn_group.checkedId())
@@ -376,14 +431,31 @@ class AnchorSetupDialog(QDialog):
         if mode == PlacementMode.ROI and self._sub_anchor_combo.currentIndex() > 0:
             sub_anchor_name = self._sub_anchor_combo.currentText()
 
-        item = _PlacedItem(mode, name, QRect(rect), sub_anchor_name)
+        # Resolve template path for anchor items
+        resolved_tpl = ""
+        if mode in (PlacementMode.ANCHOR, PlacementMode.SUB_ANCHOR):
+            chosen = self._template_edit.text().strip()
+            if chosen:
+                # User browsed to an existing file – copy to anchors_dir if needed
+                src = Path(chosen) if Path(chosen).is_absolute() else self._anchors_dir / chosen
+                dest_name = src.name
+                dest = self._anchors_dir / dest_name
+                if src.resolve() != dest.resolve() and src.exists():
+                    import shutil
+                    shutil.copy2(str(src), str(dest))
+                resolved_tpl = dest_name
+            else:
+                # No file chosen – crop from the drawn rect
+                self._save_template(name, rect)
+                resolved_tpl = f"{name}.png"
+            self._template_edit.clear()
+
+        item = _PlacedItem(mode, name, QRect(rect), sub_anchor_name, template_path=resolved_tpl)
         self.canvas.items.append(item)
         self.canvas.pending_rect = None
         self.canvas.update()
 
-        # Save template for anchors/sub-anchors
         if mode in (PlacementMode.ANCHOR, PlacementMode.SUB_ANCHOR):
-            self._save_template(name, rect)
             # Update sub-anchor combos
             self._refresh_sub_anchor_combo()
             self._refresh_search_region_combo()
@@ -391,6 +463,56 @@ class AnchorSetupDialog(QDialog):
         self._refresh_list()
         self._update_status()
         self._name_edit.clear()
+
+    def _on_list_selection_changed(self, row: int) -> None:
+        if row < 0 or row >= len(self.canvas.items):
+            self._item_tpl_group.setVisible(False)
+            return
+        item = self.canvas.items[row]
+        is_anchor = item.mode in (PlacementMode.ANCHOR, PlacementMode.SUB_ANCHOR)
+        self._item_tpl_group.setVisible(is_anchor)
+        if is_anchor:
+            self._item_tpl_label.setText(item.template_path or "(auto-crop)")
+
+    def _on_change_template(self) -> None:
+        row = self._items_list.currentRow()
+        if row < 0 or row >= len(self.canvas.items):
+            return
+        item = self.canvas.items[row]
+        if item.mode not in (PlacementMode.ANCHOR, PlacementMode.SUB_ANCHOR):
+            return
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Select Template PNG",
+            str(self._anchors_dir),
+            "Images (*.png *.jpg *.bmp)",
+        )
+        if not path:
+            return
+        src = Path(path)
+        dest_name = src.name
+        dest = self._anchors_dir / dest_name
+        if src.resolve() != dest.resolve() and src.exists():
+            import shutil
+            shutil.copy2(str(src), str(dest))
+        item.template_path = dest_name
+        self._item_tpl_label.setText(dest_name)
+        self._refresh_list()
+
+    def _on_recrop_template(self) -> None:
+        """Crop the current pending_rect (or the item rect) as this anchor's new template."""
+        row = self._items_list.currentRow()
+        if row < 0 or row >= len(self.canvas.items):
+            return
+        item = self.canvas.items[row]
+        if item.mode not in (PlacementMode.ANCHOR, PlacementMode.SUB_ANCHOR):
+            return
+        # Prefer a freshly drawn pending rect, fall back to the stored item rect
+        rect = self.canvas.pending_rect if self.canvas.pending_rect else item.rect
+        name = item.template_path.replace(".png", "").replace(".jpg", "") if item.template_path else item.name
+        self._save_template(name, rect)
+        item.template_path = f"{name}.png"
+        self._item_tpl_label.setText(item.template_path)
+        self._refresh_list()
 
     def _on_remove_item(self) -> None:
         row = self._items_list.currentRow()
@@ -407,17 +529,22 @@ class AnchorSetupDialog(QDialog):
         self._update_status()
 
     def _refresh_list(self) -> None:
+        current_row = self._items_list.currentRow()
         self._items_list.clear()
         for item in self.canvas.items:
             r = item.rect
             mode_label = item.mode.name.lower().replace("_", "-")
             sa_hint = f" → {item.sub_anchor_name}" if item.sub_anchor_name else ""
             search_hint = f" [search:{int(item.search_region.get('width', 0))}×{int(item.search_region.get('height', 0))}]" if item.search_region else ""
+            tpl_hint = f" [{item.template_path}]" if item.template_path and item.mode in (PlacementMode.ANCHOR, PlacementMode.SUB_ANCHOR) else ""
             text = (
                 f"[{mode_label}] {item.name}  "
-                f"({r.x()}, {r.y()}) {r.width()}×{r.height()}{sa_hint}{search_hint}"
+                f"({r.x()}, {r.y()}) {r.width()}×{r.height()}{sa_hint}{search_hint}{tpl_hint}"
             )
             self._items_list.addItem(text)
+        # Restore selection (triggers _on_list_selection_changed to update template panel)
+        if 0 <= current_row < self._items_list.count():
+            self._items_list.setCurrentRow(current_row)
 
     def _refresh_sub_anchor_combo(self) -> None:
         current = self._sub_anchor_combo.currentText()
@@ -483,7 +610,8 @@ class AnchorSetupDialog(QDialog):
                     if tpl is not None:
                         h, w = tpl.shape[:2]
                         rect = QRect(int(ap.ref_x), int(ap.ref_y), w, h)
-                        item = _PlacedItem(PlacementMode.ANCHOR, ap.name, rect)
+                        item = _PlacedItem(PlacementMode.ANCHOR, ap.name, rect,
+                                           template_path=ap.template_path)
                         self.canvas.items.append(item)
 
         if sub_anchors:
@@ -496,7 +624,8 @@ class AnchorSetupDialog(QDialog):
                         rect = QRect(int(ap.ref_x), int(ap.ref_y), w, h)
                         item = _PlacedItem(
                             PlacementMode.SUB_ANCHOR, ap.name, rect,
-                            search_region=ap.search_region
+                            search_region=ap.search_region,
+                            template_path=ap.template_path,
                         )
                         self.canvas.items.append(item)
 
@@ -531,7 +660,7 @@ class AnchorSetupDialog(QDialog):
                 continue
             result.append(AnchorPoint(
                 name=item.name,
-                template_path=f"{item.name}.png",
+                template_path=item.template_path or f"{item.name}.png",
                 match_threshold=0.7,
                 ref_x=float(item.rect.x()),
                 ref_y=float(item.rect.y()),
@@ -546,7 +675,7 @@ class AnchorSetupDialog(QDialog):
                 continue
             ap = AnchorPoint(
                 name=item.name,
-                template_path=f"{item.name}.png",
+                template_path=item.template_path or f"{item.name}.png",
                 match_threshold=0.7,
                 ref_x=float(item.rect.x()),
                 ref_y=float(item.rect.y()),

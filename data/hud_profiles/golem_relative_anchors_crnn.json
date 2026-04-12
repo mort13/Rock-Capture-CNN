@@ -1,0 +1,744 @@
+{
+  "name": "golem_relative_anchors_crnn",
+  "profiles": {
+    "scan_results": {
+      "name": "scan_results",
+      "rois": [
+        {
+          "name": "mass",
+          "x_offset": 0,
+          "y_offset": 0,
+          "width": 47,
+          "height": 18,
+          "filters": {
+            "brightness": 0,
+            "contrast": 0,
+            "threshold": 127,
+            "threshold_enabled": false,
+            "grayscale": true,
+            "invert": false,
+            "channel": "none"
+          },
+          "seg_mode": "fixed_width",
+          "char_width": 0,
+          "char_count": 5,
+          "allowed_chars": "1234567890",
+          "format_pattern": "",
+          "dot_width": 0,
+          "enabled": true,
+          "recognition_mode": "digit_crnn",
+          "template_dir": "",
+          "csv_index": 0,
+          "ref_x": 117.0,
+          "ref_y": 98.0
+        },
+        {
+          "name": "material1",
+          "x_offset": 0,
+          "y_offset": 0,
+          "width": 118,
+          "height": 17,
+          "filters": {
+            "brightness": 0,
+            "contrast": 0,
+            "threshold": 127,
+            "threshold_enabled": false,
+            "grayscale": true,
+            "invert": false,
+            "channel": "none"
+          },
+          "seg_mode": "projection",
+          "char_width": 0,
+          "char_count": 0,
+          "allowed_chars": "",
+          "format_pattern": "",
+          "dot_width": 0,
+          "enabled": true,
+          "recognition_mode": "word_cnn",
+          "template_dir": "",
+          "csv_index": 0,
+          "ref_x": 66.0,
+          "ref_y": 301.0
+        },
+        {
+          "name": "qual1",
+          "x_offset": 0,
+          "y_offset": 0,
+          "width": 30,
+          "height": 17,
+          "filters": {
+            "brightness": 0,
+            "contrast": 0,
+            "threshold": 127,
+            "threshold_enabled": false,
+            "grayscale": true,
+            "invert": false,
+            "channel": "none"
+          },
+          "seg_mode": "fixed_width",
+          "char_width": 0,
+          "char_count": 3,
+          "allowed_chars": "1234567890",
+          "format_pattern": "",
+          "dot_width": 0,
+          "enabled": true,
+          "recognition_mode": "digit_crnn",
+          "template_dir": "",
+          "csv_index": 0,
+          "ref_x": 186.0,
+          "ref_y": 311.0
+        },
+        {
+          "name": "material2",
+          "x_offset": 0,
+          "y_offset": 0,
+          "width": 118,
+          "height": 17,
+          "filters": {
+            "brightness": 0,
+            "contrast": 0,
+            "threshold": 127,
+            "threshold_enabled": false,
+            "grayscale": true,
+            "invert": false,
+            "channel": "none"
+          },
+          "seg_mode": "projection",
+          "char_width": 0,
+          "char_count": 0,
+          "allowed_chars": "",
+          "format_pattern": "",
+          "dot_width": 0,
+          "enabled": true,
+          "recognition_mode": "word_cnn",
+          "template_dir": "",
+          "csv_index": 0,
+          "ref_x": 66.0,
+          "ref_y": 325.0
+        },
+        {
+          "name": "qual2",
+          "x_offset": 0,
+          "y_offset": 0,
+          "width": 30,
+          "height": 17,
+          "filters": {
+            "brightness": 0,
+            "contrast": 0,
+            "threshold": 127,
+            "threshold_enabled": false,
+            "grayscale": true,
+            "invert": false,
+            "channel": "none"
+          },
+          "seg_mode": "fixed_width",
+          "char_width": 0,
+          "char_count": 3,
+          "allowed_chars": "1234567890",
+          "format_pattern": "",
+          "dot_width": 0,
+          "enabled": true,
+          "recognition_mode": "digit_crnn",
+          "template_dir": "",
+          "csv_index": 0,
+          "ref_x": 186.0,
+          "ref_y": 336.0
+        },
+        {
+          "name": "material3",
+          "x_offset": 0,
+          "y_offset": 0,
+          "width": 118,
+          "height": 17,
+          "filters": {
+            "brightness": 0,
+            "contrast": 0,
+            "threshold": 127,
+            "threshold_enabled": false,
+            "grayscale": true,
+            "invert": false,
+            "channel": "none"
+          },
+          "seg_mode": "projection",
+          "char_width": 0,
+          "char_count": 0,
+          "allowed_chars": "",
+          "format_pattern": "",
+          "dot_width": 0,
+          "enabled": true,
+          "recognition_mode": "word_cnn",
+          "template_dir": "",
+          "csv_index": 0,
+          "ref_x": 66.0,
+          "ref_y": 349.0
+        },
+        {
+          "name": "qual3",
+          "x_offset": 0,
+          "y_offset": 0,
+          "width": 30,
+          "height": 17,
+          "filters": {
+            "brightness": 0,
+            "contrast": 0,
+            "threshold": 127,
+            "threshold_enabled": false,
+            "grayscale": true,
+            "invert": false,
+            "channel": "none"
+          },
+          "seg_mode": "fixed_width",
+          "char_width": 0,
+          "char_count": 3,
+          "allowed_chars": "1234567890",
+          "format_pattern": "",
+          "dot_width": 0,
+          "enabled": true,
+          "recognition_mode": "digit_crnn",
+          "template_dir": "",
+          "csv_index": 0,
+          "ref_x": 186.0,
+          "ref_y": 360.0
+        },
+        {
+          "name": "deposit",
+          "x_offset": 0,
+          "y_offset": 0,
+          "width": 108,
+          "height": 19,
+          "filters": {
+            "brightness": 0,
+            "contrast": 0,
+            "threshold": 127,
+            "threshold_enabled": false,
+            "grayscale": true,
+            "invert": false,
+            "channel": "none"
+          },
+          "seg_mode": "projection",
+          "char_width": 0,
+          "char_count": 0,
+          "allowed_chars": "",
+          "format_pattern": "",
+          "dot_width": 0,
+          "enabled": true,
+          "recognition_mode": "word_cnn",
+          "template_dir": "",
+          "csv_index": 0,
+          "ref_x": 6.0,
+          "ref_y": 58.0
+        },
+        {
+          "name": "resistance",
+          "x_offset": 0,
+          "y_offset": 0,
+          "width": 34,
+          "height": 17,
+          "filters": {
+            "brightness": 0,
+            "contrast": 0,
+            "threshold": 127,
+            "threshold_enabled": false,
+            "grayscale": true,
+            "invert": false,
+            "channel": "none"
+          },
+          "seg_mode": "projection",
+          "char_width": 0,
+          "char_count": 2,
+          "allowed_chars": "1234567890",
+          "format_pattern": "",
+          "dot_width": 0,
+          "enabled": true,
+          "recognition_mode": "digit_crnn",
+          "template_dir": "",
+          "csv_index": 0,
+          "ref_x": 118.0,
+          "ref_y": 130.0
+        },
+        {
+          "name": "inst",
+          "x_offset": 0,
+          "y_offset": 0,
+          "width": 60,
+          "height": 17,
+          "filters": {
+            "brightness": 0,
+            "contrast": 3,
+            "threshold": 127,
+            "threshold_enabled": false,
+            "grayscale": true,
+            "invert": false,
+            "channel": "none"
+          },
+          "seg_mode": "fixed_width",
+          "char_width": 0,
+          "char_count": 3,
+          "allowed_chars": "1234567890",
+          "format_pattern": "",
+          "dot_width": 0,
+          "enabled": true,
+          "recognition_mode": "digit_crnn",
+          "template_dir": "",
+          "csv_index": 0,
+          "ref_x": 118.0,
+          "ref_y": 161.0
+        },
+        {
+          "name": "material4",
+          "x_offset": 0,
+          "y_offset": 0,
+          "width": 118,
+          "height": 17,
+          "filters": {
+            "brightness": 0,
+            "contrast": 0,
+            "threshold": 127,
+            "threshold_enabled": false,
+            "grayscale": true,
+            "invert": false,
+            "channel": "none"
+          },
+          "seg_mode": "projection",
+          "char_width": 0,
+          "char_count": 0,
+          "allowed_chars": "",
+          "format_pattern": "",
+          "dot_width": 0,
+          "enabled": true,
+          "recognition_mode": "word_cnn",
+          "template_dir": "",
+          "csv_index": 0,
+          "ref_x": 66.0,
+          "ref_y": 373.0
+        },
+        {
+          "name": "material5",
+          "x_offset": 0,
+          "y_offset": 0,
+          "width": 118,
+          "height": 17,
+          "filters": {
+            "brightness": 0,
+            "contrast": 0,
+            "threshold": 127,
+            "threshold_enabled": false,
+            "grayscale": true,
+            "invert": false,
+            "channel": "none"
+          },
+          "seg_mode": "projection",
+          "char_width": 0,
+          "char_count": 0,
+          "allowed_chars": "",
+          "format_pattern": "",
+          "dot_width": 0,
+          "enabled": true,
+          "recognition_mode": "word_cnn",
+          "template_dir": "",
+          "csv_index": 0,
+          "ref_x": 66.0,
+          "ref_y": 397.0
+        },
+        {
+          "name": "qual4",
+          "x_offset": 0,
+          "y_offset": 0,
+          "width": 30,
+          "height": 17,
+          "filters": {
+            "brightness": 0,
+            "contrast": 0,
+            "threshold": 127,
+            "threshold_enabled": false,
+            "grayscale": true,
+            "invert": false,
+            "channel": "none"
+          },
+          "seg_mode": "fixed_width",
+          "char_width": 0,
+          "char_count": 3,
+          "allowed_chars": "1234567890",
+          "format_pattern": "",
+          "dot_width": 0,
+          "enabled": true,
+          "recognition_mode": "digit_crnn",
+          "template_dir": "",
+          "csv_index": 0,
+          "ref_x": 186.0,
+          "ref_y": 384.0
+        },
+        {
+          "name": "qual5",
+          "x_offset": 0,
+          "y_offset": 0,
+          "width": 30,
+          "height": 17,
+          "filters": {
+            "brightness": 0,
+            "contrast": 0,
+            "threshold": 127,
+            "threshold_enabled": false,
+            "grayscale": true,
+            "invert": false,
+            "channel": "none"
+          },
+          "seg_mode": "fixed_width",
+          "char_width": 0,
+          "char_count": 3,
+          "allowed_chars": "1234567890",
+          "format_pattern": "",
+          "dot_width": 0,
+          "enabled": true,
+          "recognition_mode": "digit_crnn",
+          "template_dir": "",
+          "csv_index": 0,
+          "ref_x": 186.0,
+          "ref_y": 408.0
+        },
+        {
+          "name": "amount1",
+          "x_offset": 0,
+          "y_offset": 0,
+          "width": 55,
+          "height": 17,
+          "filters": {
+            "brightness": 0,
+            "contrast": 0,
+            "threshold": 127,
+            "threshold_enabled": false,
+            "grayscale": true,
+            "invert": false,
+            "channel": "none"
+          },
+          "seg_mode": "projection",
+          "char_width": 0,
+          "char_count": 2,
+          "allowed_chars": "1234567890",
+          "format_pattern": "{1,2}.{2}%",
+          "dot_width": 0,
+          "enabled": true,
+          "recognition_mode": "digit_crnn",
+          "template_dir": "",
+          "csv_index": 0,
+          "ref_x": 8.0,
+          "ref_y": 297.0
+        },
+        {
+          "name": "amount2",
+          "x_offset": 0,
+          "y_offset": 0,
+          "width": 54,
+          "height": 17,
+          "filters": {
+            "brightness": 0,
+            "contrast": 0,
+            "threshold": 127,
+            "threshold_enabled": false,
+            "grayscale": true,
+            "invert": false,
+            "channel": "none"
+          },
+          "seg_mode": "fixed_width",
+          "char_width": 0,
+          "char_count": 2,
+          "allowed_chars": "123456789",
+          "format_pattern": "",
+          "dot_width": 0,
+          "enabled": true,
+          "recognition_mode": "digit_crnn",
+          "template_dir": "",
+          "csv_index": 0,
+          "ref_x": 8.0,
+          "ref_y": 320.0
+        },
+        {
+          "name": "amount3",
+          "x_offset": 0,
+          "y_offset": 0,
+          "width": 54,
+          "height": 17,
+          "filters": {
+            "brightness": 0,
+            "contrast": 0,
+            "threshold": 127,
+            "threshold_enabled": false,
+            "grayscale": true,
+            "invert": false,
+            "channel": "none"
+          },
+          "seg_mode": "fixed_width",
+          "char_width": 0,
+          "char_count": 2,
+          "allowed_chars": "1234567890",
+          "format_pattern": "",
+          "dot_width": 0,
+          "enabled": true,
+          "recognition_mode": "digit_crnn",
+          "template_dir": "",
+          "csv_index": 0,
+          "ref_x": 7.0,
+          "ref_y": 345.0
+        },
+        {
+          "name": "amount4",
+          "x_offset": 0,
+          "y_offset": 0,
+          "width": 54,
+          "height": 17,
+          "filters": {
+            "brightness": 0,
+            "contrast": 0,
+            "threshold": 127,
+            "threshold_enabled": false,
+            "grayscale": true,
+            "invert": false,
+            "channel": "none"
+          },
+          "seg_mode": "fixed_width",
+          "char_width": 0,
+          "char_count": 2,
+          "allowed_chars": "1234567890",
+          "format_pattern": "",
+          "dot_width": 0,
+          "enabled": true,
+          "recognition_mode": "digit_crnn",
+          "template_dir": "",
+          "csv_index": 0,
+          "ref_x": 7.0,
+          "ref_y": 369.0
+        },
+        {
+          "name": "amount5",
+          "x_offset": 0,
+          "y_offset": 0,
+          "width": 54,
+          "height": 17,
+          "filters": {
+            "brightness": 0,
+            "contrast": 0,
+            "threshold": 127,
+            "threshold_enabled": false,
+            "grayscale": true,
+            "invert": false,
+            "channel": "none"
+          },
+          "seg_mode": "fixed_width",
+          "char_width": 0,
+          "char_count": 2,
+          "allowed_chars": "1234567890",
+          "format_pattern": "",
+          "dot_width": 0,
+          "enabled": true,
+          "recognition_mode": "digit_crnn",
+          "template_dir": "",
+          "csv_index": 0,
+          "ref_x": 7.0,
+          "ref_y": 393.0
+        },
+        {
+          "name": "volume",
+          "x_offset": 0,
+          "y_offset": 0,
+          "width": 51,
+          "height": 17,
+          "filters": {
+            "brightness": 0,
+            "contrast": 0,
+            "threshold": 127,
+            "threshold_enabled": false,
+            "grayscale": true,
+            "invert": false,
+            "channel": "none"
+          },
+          "seg_mode": "fixed_width",
+          "char_width": 0,
+          "char_count": 3,
+          "allowed_chars": "1234567890",
+          "format_pattern": "",
+          "dot_width": 0,
+          "enabled": true,
+          "recognition_mode": "digit_crnn",
+          "template_dir": "",
+          "csv_index": 0,
+          "ref_x": 138.0,
+          "ref_y": 246.0
+        }
+      ],
+      "search_region": {
+        "x": 1611,
+        "y": 425,
+        "w": 385,
+        "h": 643
+      },
+      "monitor_index": 0,
+      "anchors": [
+        {
+          "name": "scan",
+          "template_path": "golem_scan.jpg",
+          "match_threshold": 0.7,
+          "ref_x": 16.0,
+          "ref_y": 20.0
+        },
+        {
+          "name": "cargo",
+          "template_path": "golem_cargo.jpg",
+          "match_threshold": 0.7,
+          "ref_x": 15.0,
+          "ref_y": 477.0
+        },
+        {
+          "name": "auto",
+          "template_path": "golem_auto.jpg",
+          "match_threshold": 0.7,
+          "ref_x": 180.0,
+          "ref_y": 436.0
+        }
+      ]
+    }
+  },
+  "output_schema": [
+    {
+      "key": "scan",
+      "type": "object",
+      "children": [
+        {
+          "profile": "scan_results",
+          "roi": "deposit",
+          "key": "deposit_name"
+        },
+        {
+          "profile": "scan_results",
+          "roi": "mass",
+          "key": "mass"
+        },
+        {
+          "profile": "scan_results",
+          "roi": "resistance",
+          "key": "resistance"
+        },
+        {
+          "profile": "scan_results",
+          "roi": "inst",
+          "key": "instability"
+        },
+        {
+          "profile": "scan_results",
+          "roi": "volume",
+          "key": "volume"
+        },
+        {
+          "key": "composition",
+          "type": "array",
+          "children": [
+            {
+              "key": "material1",
+              "type": "object",
+              "children": [
+                {
+                  "profile": "scan_results",
+                  "roi": "material1",
+                  "key": "name"
+                },
+                {
+                  "profile": "scan_results",
+                  "roi": "amount1",
+                  "key": "amount"
+                },
+                {
+                  "profile": "scan_results",
+                  "roi": "qual1",
+                  "key": "quality"
+                }
+              ]
+            },
+            {
+              "key": "material2",
+              "type": "object",
+              "children": [
+                {
+                  "profile": "scan_results",
+                  "roi": "material2",
+                  "key": "name"
+                },
+                {
+                  "profile": "scan_results",
+                  "roi": "amount2",
+                  "key": "amount"
+                },
+                {
+                  "profile": "scan_results",
+                  "roi": "qual2",
+                  "key": "quality"
+                }
+              ]
+            },
+            {
+              "key": "material3",
+              "type": "object",
+              "children": [
+                {
+                  "profile": "scan_results",
+                  "roi": "material3",
+                  "key": "name"
+                },
+                {
+                  "profile": "scan_results",
+                  "roi": "amount3",
+                  "key": "amount"
+                },
+                {
+                  "profile": "scan_results",
+                  "roi": "qual3",
+                  "key": "quality"
+                }
+              ]
+            },
+            {
+              "key": "material4",
+              "type": "object",
+              "children": [
+                {
+                  "profile": "scan_results",
+                  "roi": "material4",
+                  "key": "name"
+                },
+                {
+                  "profile": "scan_results",
+                  "roi": "amount4",
+                  "key": "amount"
+                },
+                {
+                  "profile": "scan_results",
+                  "roi": "qual4",
+                  "key": "quality"
+                }
+              ]
+            },
+            {
+              "key": "material5",
+              "type": "object",
+              "children": [
+                {
+                  "profile": "scan_results",
+                  "roi": "material5",
+                  "key": "name"
+                },
+                {
+                  "profile": "scan_results",
+                  "roi": "amount5",
+                  "key": "amount"
+                },
+                {
+                  "profile": "scan_results",
+                  "roi": "qual5",
+                  "key": "quality"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

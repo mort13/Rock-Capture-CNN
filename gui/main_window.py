@@ -133,6 +133,10 @@ class MainWindow(QMainWindow):
 
         self._load_all_profiles()
 
+        # Restore last-used ship profile (writes profile files + reloads if set)
+        if self._config.active_ship_profile:
+            self._on_ship_selected(self._config.active_ship_profile)
+
     # ── Row 1: capture toolbar ────────────────────────────────────
 
     def _init_capture_toolbar(self) -> None:
@@ -294,6 +298,15 @@ class MainWindow(QMainWindow):
         self.location_edit.editingFinished.connect(self._on_config_changed)
         toolbar.addWidget(self.location_edit)
 
+        toolbar.addSeparator()
+
+        toolbar.addWidget(QLabel(" Ship: "))
+        self.ship_combo = QComboBox()
+        self.ship_combo.setMinimumWidth(160)
+        self.ship_combo.setToolTip("Select ship — auto-loads the matching HUD profile")
+        self.ship_combo.currentTextChanged.connect(self._on_ship_selected)
+        toolbar.addWidget(self.ship_combo)
+
     # ── Row 3: HUD profile toolbar ────────────────────────────────
 
     def _init_hud_toolbar(self) -> None:
@@ -343,6 +356,76 @@ class MainWindow(QMainWindow):
         idx = self.hud_profile_combo.findText(current)
         self.hud_profile_combo.setCurrentIndex(max(0, idx))
         self.hud_profile_combo.blockSignals(False)
+        self._refresh_ship_combo(names)
+
+    def _refresh_ship_combo(self, names: list[str] | None = None) -> None:
+        """Populate the Ship combo with all available HUD profile names."""
+        if names is None:
+            names = HUDProfile.list_profiles(self._hud_profiles_dir)
+        self.ship_combo.blockSignals(True)
+        current = self.ship_combo.currentText()
+        self.ship_combo.clear()
+        self.ship_combo.addItem("(none)")
+        for name in names:
+            self.ship_combo.addItem(name)
+        # Restore from config or previous selection
+        target = self._config.active_ship_profile or current
+        idx = self.ship_combo.findText(target)
+        self.ship_combo.setCurrentIndex(max(0, idx))
+        self.ship_combo.blockSignals(False)
+
+    def _on_ship_selected(self, name: str) -> None:
+        """Auto-load the selected HUD profile and persist the choice."""
+        if name == "(none)" or not name:
+            self._config.active_ship_profile = ""
+            self._config.save(self._config_path)
+            return
+
+        path = self._hud_profiles_dir / f"{name}.json"
+        if not path.exists():
+            return
+
+        self._config.active_ship_profile = name
+        self._config.save(self._config_path)
+
+        hud = HUDProfile.load(path)
+        self._active_output_schema = hud.output_schema
+        self._active_hud_name = name
+
+        was_running = self._running
+        if was_running:
+            for p in self._pipelines.values():
+                p.stop()
+            self._running = False
+            self.start_stop_btn.setText("Start All")
+            self.start_stop_btn.setStyleSheet("")
+            self.set_region_btn.setEnabled(True)
+
+        profiles_dir = self._base_dir / "data" / "profiles"
+        profiles_dir.mkdir(parents=True, exist_ok=True)
+        for pname, pdata in hud.profiles.items():
+            out_path = profiles_dir / f"{pname}.json"
+            with open(out_path, "w", encoding="utf-8") as f:
+                json.dump(pdata, f, indent=2)
+
+        self._load_all_profiles()
+        # Keep HUD combo in sync
+        self.hud_profile_combo.blockSignals(True)
+        idx = self.hud_profile_combo.findText(name)
+        self.hud_profile_combo.setCurrentIndex(max(0, idx))
+        self.hud_profile_combo.blockSignals(False)
+
+        self.statusBar().showMessage(
+            f"Ship profile '{name}' loaded ({len(hud.profiles)} profiles)"
+        )
+
+        if was_running:
+            started = self._start_all_pipelines()
+            if started:
+                self._running = True
+                self.start_stop_btn.setText("Stop All")
+                self.start_stop_btn.setStyleSheet("background-color: #ff6666;")
+                self.set_region_btn.setEnabled(False)
 
     def _on_save_hud_profile(self) -> None:
         from PyQt6.QtWidgets import QInputDialog
@@ -546,6 +629,8 @@ class MainWindow(QMainWindow):
         self.controls_panel.anchor_threshold_changed.connect(self._on_anchor_threshold)
         self.controls_panel.filters_changed.connect(self._on_filters_changed)
         self.controls_panel.rois_changed.connect(self._on_rois_changed)
+        self.controls_panel.roi_preview_requested.connect(self._on_roi_preview_requested)
+        self.controls_panel.roi_preview_cancelled.connect(self._on_roi_preview_cancelled)
         self.controls_panel.sub_anchors_changed.connect(self._on_sub_anchors_changed)
         self.controls_panel.overlay_visibility_changed.connect(self._on_overlay_visibility_changed)
         self.controls_panel.labeler_toggled.connect(self._on_labeler_toggle)
@@ -1074,6 +1159,25 @@ class MainWindow(QMainWindow):
                     self.preview_widget.remove_card(key)
             # Also clean stale result labels
             self.controls_panel.remove_stale_results(prefix, active_keys)
+
+    def _on_roi_preview_requested(self, roi, index: int) -> None:
+        """Temporarily replace profile ROI at *index* so the pipeline shows it live."""
+        profile = self._editing_profile
+        pipeline = self._editing_pipeline
+        if not profile or not pipeline:
+            return
+        if 0 <= index < len(profile.rois):
+            profile.rois[index] = roi
+            pipeline._profile = profile
+
+    def _on_roi_preview_cancelled(self, index: int) -> None:
+        """Restore the committed ROI list from the editor (dialog was cancelled)."""
+        profile = self._editing_profile
+        pipeline = self._editing_pipeline
+        if not profile or not pipeline:
+            return
+        profile.rois = self.controls_panel.roi_editor.rois
+        pipeline._profile = profile
 
     def _on_sub_anchors_changed(self) -> None:
         profile = self._editing_profile

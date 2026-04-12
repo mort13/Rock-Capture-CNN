@@ -722,7 +722,8 @@
               "children": [
                 {
                   "profile": "scan_results",
-                  "roi": "material5"
+                  "roi": "material5",
+                  "key": "name"
                 },
                 {
                   "profile": "scan_results",

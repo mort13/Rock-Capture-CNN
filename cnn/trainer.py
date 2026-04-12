@@ -143,7 +143,18 @@ class TrainerThread(QThread):
             
             # Mixed precision training for GPU speedup
             scaler = GradScaler() if device.type == 'cuda' else None
-            criterion = nn.CrossEntropyLoss()
+            
+            # Class weights to help distinguish confusing digits (0, 8, 9)
+            class_weights = torch.ones(num_classes, device=device)
+            # Increase weight on easily-confused digits
+            if num_classes > 0:
+                class_weights[0] = 2.0  # '0'
+            if num_classes > 8:
+                class_weights[8] = 2.0  # '8'
+            if num_classes > 9:
+                class_weights[9] = 2.0  # '9'
+            
+            criterion = nn.CrossEntropyLoss(weight=class_weights)
             optimizer = optim.Adam(model.parameters(), lr=self.learning_rate)
 
             self.progress_update.emit(

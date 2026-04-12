@@ -26,6 +26,7 @@ _MODE_VALUES = [value for _, value in _SEG_MODES]
 
 _RECOG_MODES = [
     ("CNN (digits/chars)", "cnn"),
+    ("CRNN sequence (digits)", "digit_crnn"),
     ("Template matching (words)", "template"),
     ("Word CNN (names)", "word_cnn"),
 ]
@@ -299,9 +300,13 @@ class ROIEditor(QGroupBox):
     Signals:
         roi_selected(int): index of selected ROI
         rois_changed(): emitted when ROIs are added/removed/edited
+        roi_preview_requested(ROIDefinition, int): live preview during ROI editing
+        roi_preview_cancelled(int): ROI editing cancelled, restore old ROI
     """
     roi_selected = pyqtSignal(int)
     rois_changed = pyqtSignal()
+    roi_preview_requested = pyqtSignal(object, int)  # ROIDefinition, index
+    roi_preview_cancelled = pyqtSignal(int)  # index
 
     def __init__(self, parent=None):
         super().__init__("ROI Definitions", parent)

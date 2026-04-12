@@ -25,6 +25,7 @@ from cnn.trainer import TrainerThread
 from word_cnn.predictor import WordPredictor
 from word_cnn.trainer import WordTrainerThread
 from word_cnn.seed import seed_from_templates
+from digit_crnn.predictor import CRNNPredictor
 from gui.preview_widget import PreviewWidget
 from gui.controls_panel import ControlsPanel
 from gui.region_selector import ScreenCaptureOverlay
@@ -95,6 +96,7 @@ class MainWindow(QMainWindow):
         self._hud_profiles_dir = self._base_dir / "data" / "hud_profiles"
         self._predictor = Predictor()
         self._word_predictor = WordPredictor()
+        self._crnn_predictor = CRNNPredictor()
         self._pipelines: dict[str, RecognitionPipeline] = {}
         self._profiles: dict[str, Profile] = {}
         self._editing_profile_name: str | None = None
@@ -114,6 +116,7 @@ class MainWindow(QMainWindow):
         self._session_file: Path | None = None
         self._model_path: str = ""
         self._word_model_path: str = ""
+        self._crnn_model_path: str = ""
         self._active_output_schema: list[SchemaNode] = []
         self._active_hud_name: str = ""
         self._tolerance_percentage: float = 0.1
@@ -230,6 +233,18 @@ class MainWindow(QMainWindow):
         self.load_word_model_btn = QPushButton("Load Word Model...")
         self.load_word_model_btn.clicked.connect(self._on_load_word_model)
         toolbar.addWidget(self.load_word_model_btn)
+
+        toolbar.addSeparator()
+
+        toolbar.addWidget(QLabel(" CRNN Model: "))
+        self.crnn_model_status_label = QLabel("No CRNN model")
+        self.crnn_model_status_label.setStyleSheet("color: gray;")
+        self.crnn_model_status_label.setMinimumWidth(120)
+        toolbar.addWidget(self.crnn_model_status_label)
+
+        self.load_crnn_model_btn = QPushButton("Load CRNN...")
+        self.load_crnn_model_btn.clicked.connect(self._on_load_crnn_model)
+        toolbar.addWidget(self.load_crnn_model_btn)
 
         self.seed_templates_btn = QPushButton("Seed Templates")
         self.seed_templates_btn.clicked.connect(self._on_seed_templates)
@@ -618,6 +633,14 @@ class MainWindow(QMainWindow):
                     self._word_model_path = word_model_path.name
                     self._update_word_model_status()
 
+        # Auto-load CRNN model
+        if not self._crnn_predictor.is_loaded:
+            crnn_model_path = self._base_dir / "data" / "models" / "crnn_model.pth"
+            if crnn_model_path.exists():
+                if self._crnn_predictor.load_model(str(crnn_model_path)):
+                    self._crnn_model_path = crnn_model_path.name
+                    self._update_crnn_model_status()
+
         self._refresh_profile_combo(names)
         self._refresh_hud_profile_combo()
 
@@ -625,7 +648,9 @@ class MainWindow(QMainWindow):
         """Create and wire a RecognitionPipeline for a single profile."""
         pipeline = RecognitionPipeline(
             parent=self, predictor=self._predictor,
-            word_predictor=self._word_predictor, profile_name=name,
+            word_predictor=self._word_predictor,
+            crnn_predictor=self._crnn_predictor,
+            profile_name=name,
         )
         pipeline.load_profile(profile, self._base_dir)
         pipeline.frame_processed.connect(self._on_frame_result)
@@ -1133,6 +1158,29 @@ class MainWindow(QMainWindow):
         else:
             self.word_model_status_label.setText("No word model")
             self.word_model_status_label.setStyleSheet("color: gray;")
+
+    # ── CRNN ─────────────────────────────────────────────────────
+
+    def _update_crnn_model_status(self) -> None:
+        if self._crnn_predictor.is_loaded:
+            self.crnn_model_status_label.setText(self._crnn_model_path)
+            self.crnn_model_status_label.setStyleSheet("color: green;")
+        else:
+            self.crnn_model_status_label.setText("No CRNN model")
+            self.crnn_model_status_label.setStyleSheet("color: gray;")
+
+    def _on_load_crnn_model(self) -> None:
+        models_dir = self._base_dir / "data" / "models"
+        models_dir.mkdir(parents=True, exist_ok=True)
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Load CRNN Model", str(models_dir), "PyTorch Models (*.pth)"
+        )
+        if path:
+            if self._crnn_predictor.load_model(path):
+                self._crnn_model_path = Path(path).name
+                self._update_crnn_model_status()
+            else:
+                QMessageBox.warning(self, "Load Failed", "Failed to load CRNN model.")
 
     def _on_debug_word_toggle(self, checked: bool) -> None:
         debug_dir = self._base_dir / "debug_word_rois" if checked else None

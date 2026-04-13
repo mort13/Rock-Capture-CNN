@@ -4,6 +4,7 @@ Game HUD OCR using dynamic anchor + CNN digit recognition.
 """
 
 import sys
+import argparse
 from pathlib import Path
 
 # Ensure the project root is on sys.path
@@ -19,9 +20,25 @@ from gui.main_window import MainWindow
 
 
 def main():
-    app = QApplication(sys.argv)
+    parser = argparse.ArgumentParser(description="Rock Capture CNN")
+    parser.add_argument(
+        "--onnx", action="store_true",
+        help="Use ONNX Runtime for CRNN inference instead of PyTorch"
+    )
+    args, qt_args = parser.parse_known_args()
+
+    if args.onnx:
+        from digit_crnn.onnx_predictor import CRNNOnnxPredictor
+        crnn_predictor = CRNNOnnxPredictor()
+        print("[main] CRNN backend: ONNX Runtime")
+    else:
+        from digit_crnn.predictor import CRNNPredictor
+        crnn_predictor = CRNNPredictor()
+        print("[main] CRNN backend: PyTorch")
+
+    app = QApplication([sys.argv[0]] + qt_args)
     app.setStyle("Fusion")
-    window = MainWindow()
+    window = MainWindow(crnn_predictor=crnn_predictor)
     window.show()
     sys.exit(app.exec())
 

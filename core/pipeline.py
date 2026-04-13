@@ -17,6 +17,7 @@ from core.profile import Profile, ROIDefinition
 from core.template_matcher import WordTemplateMatcher
 from cnn.predictor import Predictor
 from word_cnn.predictor import WordPredictor
+from digit_crnn.predictor import CRNNPredictor
 
 
 @dataclass
@@ -55,6 +56,7 @@ class RecognitionPipeline(QObject):
 
     def __init__(self, parent=None, predictor: Predictor | None = None,
                  word_predictor: WordPredictor | None = None,
+                 crnn_predictor: CRNNPredictor | None = None,
                  profile_name: str = ""):
         super().__init__(parent)
         self.capture_engine = CaptureEngine(self)
@@ -69,6 +71,7 @@ class RecognitionPipeline(QObject):
             self._owns_predictor = True
 
         self.word_predictor = word_predictor or WordPredictor()
+        self.crnn_predictor = crnn_predictor or CRNNPredictor()
 
         self._profile: Profile | None = None
         self._profile_name: str = profile_name
@@ -358,6 +361,28 @@ class RecognitionPipeline(QObject):
                 recognition_mode="word_cnn",
             )
 
+        # ── CRNN digit sequence mode ───────────────────────────
+        if roi_def.recognition_mode == "digit_crnn":
+            if self.crnn_predictor.is_loaded:
+                text, conf = self.crnn_predictor.predict(
+                    filtered_roi, roi_def.format_pattern
+                )
+                if not text:
+                    text = "?"
+                    conf = 0.0
+            else:
+                text = "?"
+                conf = 0.0
+            return ROIResult(
+                name=roi_def.name,
+                raw_image=raw_roi,
+                filtered_image=filtered_roi,
+                characters=[],
+                recognized_text=text,
+                confidence=conf,
+                recognition_mode="digit_crnn",
+            )
+
         # ── CNN recognition mode ───────────────────────────────
         pattern = roi_def.format_pattern
 
@@ -390,7 +415,7 @@ class RecognitionPipeline(QObject):
                         else:
                             parts.append("?")
                         pred_idx += 1
-                text = "".join(parts)
+                text = "".join(parts).replace('%', '')
                 conf = sum(confs) / len(confs) if confs else 0.0
         else:
             x_count = pattern.count("x") if pattern else 0
@@ -416,6 +441,7 @@ class RecognitionPipeline(QObject):
                     self._apply_format_pattern(pattern, raw_text)
                     if pattern else raw_text
                 )
+                text = text.replace('%', '')
                 conf = sum(confs) / len(confs) if confs else 0.0
 
         return ROIResult(

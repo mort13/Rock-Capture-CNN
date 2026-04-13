@@ -26,6 +26,7 @@ _MODE_VALUES = [value for _, value in _SEG_MODES]
 
 _RECOG_MODES = [
     ("CNN (digits/chars)", "cnn"),
+    ("CRNN sequence (digits)", "digit_crnn"),
     ("Template matching (words)", "template"),
     ("Word CNN (names)", "word_cnn"),
 ]
@@ -35,6 +36,9 @@ _RECOG_VALUES = [value for _, value in _RECOG_MODES]
 
 class ROIEditDialog(QDialog):
     """Dialog for adding or editing a single ROI definition."""
+
+    # Emitted whenever position/size changes so the pipeline can show a live preview
+    preview_changed = pyqtSignal(object)  # ROIDefinition
 
     def __init__(self, parent=None, roi: ROIDefinition | None = None,
                  multi_anchor: bool = False,
@@ -236,6 +240,14 @@ class ROIEditDialog(QDialog):
 
         self._on_recog_mode_changed(self.recog_combo.currentIndex())
 
+        # Connect live-preview signal to all position / size spinboxes
+        for spin in (self.x_spin, self.y_spin, self.w_spin, self.h_spin,
+                     self.ref_x_spin, self.ref_y_spin):
+            spin.valueChanged.connect(self._emit_preview)
+
+    def _emit_preview(self) -> None:
+        self.preview_changed.emit(self.get_roi())
+
     def _on_recog_mode_changed(self, index: int) -> None:
         is_template = _RECOG_VALUES[index] == "template"
         # Show template dir only in template mode
@@ -299,9 +311,13 @@ class ROIEditor(QGroupBox):
     Signals:
         roi_selected(int): index of selected ROI
         rois_changed(): emitted when ROIs are added/removed/edited
+        roi_preview_requested(ROIDefinition, int): live preview during ROI editing
+        roi_preview_cancelled(int): ROI editing cancelled, restore old ROI
     """
     roi_selected = pyqtSignal(int)
     rois_changed = pyqtSignal()
+    roi_preview_requested = pyqtSignal(object, int)  # ROIDefinition, index
+    roi_preview_cancelled = pyqtSignal(int)  # index
 
     def __init__(self, parent=None):
         super().__init__("ROI Definitions", parent)
@@ -404,19 +420,26 @@ class ROIEditor(QGroupBox):
         idx = self.roi_list.currentRow()
         if idx < 0 or idx >= len(self._rois):
             return
+        old_roi = self._rois[idx]
         dialog = ROIEditDialog(
-            self, self._rois[idx],
+            self, old_roi,
             multi_anchor=self._multi_anchor,
             sub_anchor_names=self._sub_anchor_names,
         )
+        dialog.preview_changed.connect(
+            lambda roi: self.roi_preview_requested.emit(roi, idx)
+        )
         if dialog.exec():
             new_roi = dialog.get_roi()
-            new_roi.filters = self._rois[idx].filters  # preserve filter settings
-            new_roi.enabled = self._rois[idx].enabled  # preserve enabled state (list checkbox)
+            new_roi.filters = self._rois[idx].filters
+            new_roi.enabled = self._rois[idx].enabled
             self._rois[idx] = new_roi
             self._refresh_list()
             self.roi_list.setCurrentRow(idx)
             self.rois_changed.emit()
+        else:
+            # Restore original ROI in the pipeline
+            self.roi_preview_cancelled.emit(idx)
 
     def _on_remove(self) -> None:
         idx = self.roi_list.currentRow()

@@ -1,6 +1,8 @@
 """
 Training thread for the word-classification CNN.
 Mirrors cnn.trainer but uses WordCNN + WordDataset.
+
+Also exposes a standalone train() function for CLI use (no Qt required).
 """
 
 import torch
@@ -8,8 +10,17 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader, random_split
 from torch.cuda.amp import autocast, GradScaler
-from PyQt6.QtCore import QThread, pyqtSignal
 from pathlib import Path
+
+# Qt is only needed by WordTrainerThread (GUI mode); import lazily so the
+# standalone train() function works without PyQt6 installed.
+try:
+    from PyQt6.QtCore import QThread, pyqtSignal
+    _QT_AVAILABLE = True
+except ImportError:  # pragma: no cover
+    QThread = object  # type: ignore[misc,assignment]
+    pyqtSignal = None  # type: ignore[assignment]
+    _QT_AVAILABLE = False
 
 from word_cnn.model import WordCNN
 from word_cnn.dataset import WordDataset
@@ -27,6 +38,136 @@ def discover_word_classes(data_dir: str | Path) -> list[str]:
             if subdir.is_dir():
                 classes.append(subdir.name)
     return sorted(classes)
+
+
+def train(
+    data_dir: str | Path = "data/word_training_data",
+    output_path: str | Path = "data/models/word_model.pth",
+    word_classes: list[str] | None = None,
+    epochs: int = 60,
+    batch_size: int = 32,
+    lr: float = 0.001,
+    device: str | None = None,
+) -> None:
+    """
+    Train a WordCNN and save the best checkpoint to *output_path*.
+
+    When *word_classes* is None, all subdirectories of *data_dir* are used.
+    Progress is printed to stdout; no Qt required.
+    """
+    data_dir = Path(data_dir)
+    output_path = Path(output_path)
+
+    # ── Device ────────────────────────────────────────────────────────────────
+    if device is None:
+        _device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    else:
+        _device = torch.device(device)
+    print(f"[WordCNN trainer] device: {_device}")
+
+    # ── Classes ───────────────────────────────────────────────────────────────
+    if word_classes is None:
+        word_classes = discover_word_classes(data_dir)
+    if len(word_classes) < 2:
+        raise RuntimeError(f"Need at least 2 classes, found {len(word_classes)}.")
+
+    # ── Dataset ───────────────────────────────────────────────────────────────
+    probe = WordDataset(data_dir, word_classes, augment=False, oversample=1)
+    n_real = probe.base_len
+    if n_real < 2:
+        raise RuntimeError(
+            f"Not enough samples ({n_real}) in {data_dir}. "
+            "Run generate_synth_word_data.py first."
+        )
+    word_classes = probe.word_classes  # update in case dataset filtered any
+    num_classes = len(word_classes)
+
+    oversample = max(1, 200 // n_real)
+
+    train_ds = WordDataset(data_dir, word_classes, augment=True, oversample=oversample)
+    val_ds   = WordDataset(data_dir, word_classes, augment=False, oversample=1)
+
+    use_cuda = _device.type == "cuda"
+    num_workers = 4 if use_cuda else 2
+
+    train_loader = DataLoader(
+        train_ds, batch_size=batch_size, shuffle=True,
+        num_workers=num_workers, pin_memory=use_cuda,
+    )
+    val_loader = DataLoader(
+        val_ds, batch_size=batch_size, shuffle=False,
+        num_workers=num_workers, pin_memory=use_cuda,
+    )
+
+    print(
+        f"[WordCNN trainer] {n_real} real images "
+        f"(×{oversample} oversample), {num_classes} classes, "
+        f"{epochs} epochs, batch {batch_size}, lr {lr}"
+    )
+
+    # ── Model ─────────────────────────────────────────────────────────────────
+    model     = WordCNN(num_classes=num_classes).to(_device)
+    criterion = nn.CrossEntropyLoss()
+    optimizer = optim.Adam(model.parameters(), lr=lr)
+    scaler    = GradScaler() if use_cuda else None
+
+    best_val_acc = 0.0
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    for epoch in range(1, epochs + 1):
+        # ── Train ─────────────────────────────────────────────────────────────
+        model.train()
+        total_loss = 0.0
+        for images, labels in train_loader:
+            images = images.to(_device)
+            labels = labels.to(_device)
+            optimizer.zero_grad()
+            if scaler:
+                with autocast():
+                    outputs = model(images)
+                    loss = criterion(outputs, labels)
+                scaler.scale(loss).backward()
+                scaler.step(optimizer)
+                scaler.update()
+            else:
+                outputs = model(images)
+                loss = criterion(outputs, labels)
+                loss.backward()
+                optimizer.step()
+            total_loss += loss.item()
+        avg_loss = total_loss / len(train_loader)
+
+        # ── Validate ──────────────────────────────────────────────────────────
+        model.eval()
+        correct = total = 0
+        with torch.no_grad():
+            for images, labels in val_loader:
+                images = images.to(_device)
+                labels = labels.to(_device)
+                _, predicted = torch.max(model(images), 1)
+                total   += labels.size(0)
+                correct += (predicted == labels).sum().item()
+        val_acc = correct / total if total > 0 else 0.0
+
+        marker = " *" if val_acc > best_val_acc else ""
+        print(
+            f"  epoch {epoch:3d}/{epochs}  loss {avg_loss:.4f}  "
+            f"val_acc {val_acc:.4f}{marker}"
+        )
+
+        if val_acc > best_val_acc:
+            best_val_acc = val_acc
+            torch.save(
+                {
+                    "model_state_dict": model.state_dict(),
+                    "word_classes": word_classes,
+                    "num_classes": num_classes,
+                    "val_accuracy": val_acc,
+                },
+                str(output_path),
+            )
+
+    print(f"\n[WordCNN trainer] best val_acc {best_val_acc:.4f} -> {output_path}")
 
 
 class WordTrainerThread(QThread):

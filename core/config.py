@@ -13,6 +13,7 @@ class AppConfig:
     org: str = ""
     system: str = ""
     gravity_well: str = ""
+    active_ship_profile: str = ""  # last selected HUD profile name
 
     def to_dict(self) -> dict:
         return {
@@ -21,6 +22,7 @@ class AppConfig:
             "org": self.org,
             "system": self.system,
             "gravity_well": self.gravity_well,
+            "active_ship_profile": self.active_ship_profile,
         }
 
     @classmethod
@@ -31,6 +33,7 @@ class AppConfig:
             org=d.get("org", ""),
             system=d.get("system", ""),
             gravity_well=d.get("gravity_well", ""),
+            active_ship_profile=d.get("active_ship_profile", ""),
         )
 
     def save(self, path: Path) -> None:

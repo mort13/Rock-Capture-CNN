@@ -27,6 +27,8 @@ class ControlsPanel(QWidget):
         filters_changed(FilterSettings): filter settings changed for selected ROI
         roi_selected(int): ROI index selected in list
         rois_changed(): ROIs added/removed/edited
+        roi_preview_requested(ROIDefinition, int): live preview during ROI editing
+        roi_preview_cancelled(int): ROI editing cancelled, restore old ROI
         train_requested(): user clicked Train button
         load_model_requested(): user clicked Load Model button
         labeler_toggled(bool): labeler mode toggled
@@ -39,6 +41,8 @@ class ControlsPanel(QWidget):
     filters_changed = pyqtSignal(object)
     roi_selected_signal = pyqtSignal(int)
     rois_changed = pyqtSignal()
+    roi_preview_requested = pyqtSignal(object, int)  # ROIDefinition, index
+    roi_preview_cancelled = pyqtSignal(int)  # index
     sub_anchors_changed = pyqtSignal()
     overlay_visibility_changed = pyqtSignal(dict)
     labeler_toggled = pyqtSignal(bool)
@@ -68,6 +72,8 @@ class ControlsPanel(QWidget):
         self.roi_editor = ROIEditor()
         self.roi_editor.roi_selected.connect(self._on_roi_selected)
         self.roi_editor.rois_changed.connect(self._on_rois_changed)
+        self.roi_editor.roi_preview_requested.connect(self.roi_preview_requested.emit)
+        self.roi_editor.roi_preview_cancelled.connect(self.roi_preview_cancelled.emit)
         layout.addWidget(self.roi_editor)
 
         # 3. Filter controls

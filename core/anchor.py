@@ -90,6 +90,12 @@ class AnchorMatcher:
     using ``cv2.matchTemplate`` with ``TM_CCOEFF_NORMED``.
     """
 
+    # Default scale search range: covers 0.5× – 2.0× of the reference resolution.
+    # 17 steps → ~8.8 % increment between probes, fast enough for real-time use.
+    SCALE_MIN: float = 0.5
+    SCALE_MAX: float = 2.0
+    SCALE_STEPS: int = 17
+
     def __init__(self):
         # Legacy single-template state
         self._template: np.ndarray | None = None
@@ -98,6 +104,15 @@ class AnchorMatcher:
 
         # Multi-anchor template cache: name → (gray_img, color_img)
         self._templates: dict[str, tuple[np.ndarray, np.ndarray]] = {}
+
+        # Multi-scale matching config
+        self.multi_scale: bool = True
+        self.scale_range: tuple[float, float] = (self.SCALE_MIN, self.SCALE_MAX)
+        self.scale_steps: int = self.SCALE_STEPS
+
+        # Last-found scale cache: id(template_gray) → scale float
+        # Templates are kept alive in self._templates so the id is stable.
+        self._scale_cache: dict[int, float] = {}
 
     # -- Legacy single-anchor properties ----------------------------------
 
@@ -126,6 +141,9 @@ class AnchorMatcher:
         img = cv2.imread(str(path), cv2.IMREAD_COLOR)
         if img is None:
             return False
+        # Drop cached scale for the old template before replacing it.
+        if self._template_gray is not None:
+            self._scale_cache.pop(id(self._template_gray), None)
         self._template = img
         self._template_gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
         return True
@@ -143,6 +161,7 @@ class AnchorMatcher:
 
     def clear_anchor_templates(self) -> None:
         self._templates.clear()
+        self._scale_cache.clear()
 
     # -- Legacy single-anchor matching -------------------------------------
 
@@ -153,44 +172,17 @@ class AnchorMatcher:
         if self._template_gray is None:
             return AnchorResult(found=False)
 
-        roi_offset_x = 0
-        roi_offset_y = 0
-        search_area = frame
+        search_rect: tuple[int, int, int, int] | None = None
         if anchor_roi and all(k in anchor_roi for k in ("x", "y", "w", "h")):
-            rx, ry = anchor_roi["x"], anchor_roi["y"]
-            rw, rh = anchor_roi["w"], anchor_roi["h"]
-            rx = max(0, rx)
-            ry = max(0, ry)
-            rx2 = min(frame.shape[1], rx + rw)
-            ry2 = min(frame.shape[0], ry + rh)
-            search_area = frame[ry:ry2, rx:rx2]
-            roi_offset_x = rx
-            roi_offset_y = ry
-
-        if search_area.size == 0:
-            return AnchorResult(found=False)
-
-        search_gray = cv2.cvtColor(search_area, cv2.COLOR_BGR2GRAY)
-        th, tw = self._template_gray.shape[:2]
-
-        if search_gray.shape[0] < th or search_gray.shape[1] < tw:
-            return AnchorResult(found=False)
-
-        result = cv2.matchTemplate(
-            search_gray, self._template_gray, cv2.TM_CCOEFF_NORMED,
-        )
-        _, max_val, _, max_loc = cv2.minMaxLoc(result)
-
-        if max_val >= self._threshold:
-            return AnchorResult(
-                found=True,
-                x=max_loc[0] + roi_offset_x,
-                y=max_loc[1] + roi_offset_y,
-                confidence=max_val,
-                anchor_w=tw,
-                anchor_h=th,
+            search_rect = (
+                anchor_roi["x"], anchor_roi["y"],
+                anchor_roi["w"], anchor_roi["h"],
             )
-        return AnchorResult(found=False, confidence=max_val)
+
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        return self._match_template_multiscale(
+            gray, self._template_gray, self._threshold, search_rect
+        )
 
     # -- Multi-anchor matching ---------------------------------------------
 
@@ -238,6 +230,65 @@ class AnchorMatcher:
             )
         return AnchorResult(found=False, confidence=max_val)
 
+    def _match_template_multiscale(
+        self,
+        gray_frame: np.ndarray,
+        template_gray: np.ndarray,
+        threshold: float,
+        search_rect: tuple[int, int, int, int] | None = None,
+    ) -> AnchorResult:
+        """Multi-scale wrapper around ``_match_template_in``.
+
+        Resizes *template_gray* over ``self.scale_range`` (``self.scale_steps``
+        probes) and returns the best-confidence match.  Falls back to a single
+        unit-scale attempt when ``self.multi_scale`` is False.
+        """
+        if not self.multi_scale:
+            return self._match_template_in(
+                gray_frame, template_gray, threshold, search_rect
+            )
+
+        th, tw = template_gray.shape[:2]
+        cache_key = id(template_gray)
+
+        # Try last-known scale first — avoids the full sweep every frame.
+        cached_scale = self._scale_cache.get(cache_key)
+        if cached_scale is not None:
+            new_w = max(1, int(round(tw * cached_scale)))
+            new_h = max(1, int(round(th * cached_scale)))
+            scaled_tpl = cv2.resize(
+                template_gray, (new_w, new_h), interpolation=cv2.INTER_LINEAR
+            )
+            ar = self._match_template_in(gray_frame, scaled_tpl, threshold, search_rect)
+            if ar.found:
+                return ar
+
+        # Full sweep — runs when cache is cold or cached scale no longer matches.
+        best = AnchorResult(found=False, confidence=0.0)
+        best_scale: float = 1.0
+        scales = np.linspace(self.scale_range[0], self.scale_range[1], self.scale_steps)
+
+        for s in scales:
+            new_w = max(1, int(round(tw * s)))
+            new_h = max(1, int(round(th * s)))
+            # Skip if scaled template would be larger than the search area
+            if search_rect is not None:
+                _, _, sw, sh = search_rect
+                if new_w > sw or new_h > sh:
+                    continue
+            scaled_tpl = cv2.resize(
+                template_gray, (new_w, new_h), interpolation=cv2.INTER_LINEAR
+            )
+            ar = self._match_template_in(gray_frame, scaled_tpl, threshold, search_rect)
+            if ar.confidence > best.confidence:
+                best = ar
+                best_scale = s
+
+        if best.found:
+            self._scale_cache[cache_key] = best_scale
+
+        return best
+
     def find_anchors(
         self,
         frame: np.ndarray,
@@ -261,7 +312,7 @@ class AnchorMatcher:
             if tpl is None:
                 continue
             tpl_gray, _ = tpl
-            ar = self._match_template_in(gray, tpl_gray, ap.match_threshold)
+            ar = self._match_template_multiscale(gray, tpl_gray, ap.match_threshold)
             results[ap.name] = ar
             if ar.found:
                 ref_pts.append((ap.ref_x, ap.ref_y))
@@ -322,6 +373,6 @@ class AnchorMatcher:
             sw = tw + 2 * padding
             sh = th + 2 * padding
 
-        return self._match_template_in(
+        return self._match_template_multiscale(
             frame_gray, tpl_gray, threshold, (sx, sy, sw, sh),
         )

@@ -3,5 +3,6 @@
   "user": "Mort13",
   "org": "RoseCorp",
   "system": "Stanton",
-  "gravity_well": "Calliope"
+  "gravity_well": "Calliope",
+  "active_ship_profile": "golem_relative_anchors_crnn"
 }
